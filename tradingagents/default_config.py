@@ -12,6 +12,11 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_DEEP_THINK_LLM":       "deep_think_llm",
     "TRADINGAGENTS_QUICK_THINK_LLM":      "quick_think_llm",
     "TRADINGAGENTS_LLM_BACKEND_URL":      "backend_url",
+    # Multi-platform LLM config (falls back to single-provider if not set)
+    "TRADINGAGENTS_QUICK_LLM_PROVIDER":   "quick_llm_provider",
+    "TRADINGAGENTS_DEEP_LLM_PROVIDER":    "deep_llm_provider",
+    "TRADINGAGENTS_BACKEND_URL_QUICK":    "backend_url_quick",
+    "TRADINGAGENTS_BACKEND_URL_DEEP":     "backend_url_deep",
     "TRADINGAGENTS_OUTPUT_LANGUAGE":      "output_language",
     "TRADINGAGENTS_MAX_DEBATE_ROUNDS":    "max_debate_rounds",
     "TRADINGAGENTS_MAX_RISK_ROUNDS":      "max_risk_discuss_rounds",
@@ -19,12 +24,15 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
+    "TRADINGAGENTS_LLM_TIMEOUT":          "llm_timeout",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
     "TRADINGAGENTS_GOOGLE_THINKING_LEVEL":   "google_thinking_level",
     "TRADINGAGENTS_OPENAI_REASONING_EFFORT": "openai_reasoning_effort",
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
+    # Market / exchange regime selector
+    "TRADINGAGENTS_MARKET_TYPE":             "market_type",
 }
 
 
@@ -81,6 +89,12 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "llm_provider": "openai",
     "deep_think_llm": "gpt-5.5",
     "quick_think_llm": "gpt-5.4-mini",
+    # Multi-platform LLM config (per-model provider selection)
+    # When set, these override the single-provider llm_provider for each model type
+    "quick_llm_provider": None,   # Falls back to llm_provider if None
+    "deep_llm_provider": None,    # Falls back to llm_provider if None
+    "backend_url_quick": None,    # Falls back to backend_url if None
+    "backend_url_deep": None,     # Falls back to backend_url if None
     # When None, each provider's client falls back to its own default endpoint
     # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
     # The CLI overrides this per provider when the user picks one. Keeping a
@@ -100,6 +114,10 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # provider/SDK at its own default (usually 2). Raise it to ride out bursty
     # 429 throttling on rate-limited deployments instead of aborting a run (#1091).
     "llm_max_retries": None,
+    # HTTP timeout (seconds) for LLM API calls. Prevents indefinite hangs when
+    # the provider is unreachable or slow. None leaves each provider at its own
+    # default (usually no timeout). Set to 300 (5 minutes) for safety.
+    "llm_timeout": 300,
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,
@@ -161,4 +179,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
         ".SZ":  "399001.SZ",   # Shenzhen (SZSE Component)
         "":     "SPY",         # default for US-listed tickers (no suffix)
     },
+    # Market / exchange regime: "auto" detects from ticker, or force "us"/"astock"/"hk"/"crypto"
+    "market_type": "auto",
+    # A-share specific settings (only active when market_type == "astock")
+    "astock_lookback_days": 60,          # historical window for A-share data fetch
+    "astock_trading_sessions": True,     # include both morning & afternoon sessions
 })
