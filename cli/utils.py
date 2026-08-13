@@ -78,13 +78,27 @@ def normalize_ticker_symbol(ticker: str) -> str:
         return ticker.strip().upper()
 
 
+_MARKET_TYPE_MAP = {
+    "us": AssetType.STOCK,
+    "astock": AssetType.ASTOCK,
+    "hk": AssetType.STOCK,
+    "crypto": AssetType.CRYPTO,
+}
+
+
 def detect_asset_type(ticker: str) -> AssetType:
-    """Classify on the canonical symbol so e.g. BTCUSD and BTC-USDT both read as
-    crypto (#981/#982), matching what the data path will actually fetch."""
+    """Classify a ticker using the centralized market detector.
+
+    Normalizes the ticker first (e.g. ``BTCUSD`` -> ``BTC-USD``) so that the
+    detector's ``-USD`` suffix regex matches correctly.  Maps the detector's
+    output (``"us"``, ``"astock"``, ``"hk"``, ``"crypto"``) to the CLI's
+    :class:`AssetType` enum.
+    """
+    from tradingagents.markets.detector import detect_market_type
+
     canonical = normalize_ticker_symbol(ticker)
-    if canonical.endswith(CRYPTO_SUFFIXES):
-        return AssetType.CRYPTO
-    return AssetType.STOCK
+    market = detect_market_type(canonical)
+    return _MARKET_TYPE_MAP.get(market, AssetType.STOCK)
 
 
 def filter_analysts_for_asset_type(
