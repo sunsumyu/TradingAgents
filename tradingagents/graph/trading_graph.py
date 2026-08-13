@@ -32,6 +32,7 @@ from tradingagents.dataflows.config import set_config
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
+from tradingagents.llm_clients.factory import create_quick_llm, create_deep_llm
 from tradingagents.reporting import write_report_tree
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
@@ -92,27 +93,18 @@ class TradingAgentsGraph:
         os.makedirs(self.config["results_dir"], exist_ok=True)
 
         # Initialize LLMs with provider-specific thinking configuration
-        llm_kwargs = self._get_provider_kwargs()
+        # Multi-platform: each model type can use independent providers
+        quick_kwargs = self._get_provider_kwargs("quick")
+        deep_kwargs = self._get_provider_kwargs("deep")
 
         # Add callbacks to kwargs if provided (passed to LLM constructor)
         if self.callbacks:
-            llm_kwargs["callbacks"] = self.callbacks
+            quick_kwargs["callbacks"] = self.callbacks
+            deep_kwargs["callbacks"] = self.callbacks
 
-        deep_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["deep_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
-        )
-        quick_client = create_llm_client(
-            provider=self.config["llm_provider"],
-            model=self.config["quick_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
-        )
-
-        self.deep_thinking_llm = deep_client.get_llm()
-        self.quick_thinking_llm = quick_client.get_llm()
+        # Create LLMs with independent providers (falls back to single-provider if not set)
+        self.quick_thinking_llm = create_quick_llm(self.config, **quick_kwargs)
+        self.deep_thinking_llm = create_deep_llm(self.config, **deep_kwargs)
 
         self.memory_log = TradingMemoryLog(self.config)
 
@@ -144,16 +136,35 @@ class TradingAgentsGraph:
 
         # Graph-shape-affecting run choices, kept for the checkpoint signature.
         self.selected_analysts = tuple(selected_analysts)
+        # A-share specific analysts appended at propagation time when
+        # market_type resolves to "astock".
+        self.astock_analysts = tuple(
+            config.get("astock_analysts", ("policy", "hot_money", "lockup"))
+        ) if config else ("policy", "hot_money", "lockup")
 
         # Set up the graph: keep the workflow for recompilation with a checkpointer.
-        self.workflow = self.graph_setup.setup_graph(selected_analysts)
+        self._base_workflow = self.graph_setup.setup_graph(selected_analysts)
+        self.workflow = self._base_workflow
         self.graph = self.workflow.compile()
         self._checkpointer_ctx = None
 
-    def _get_provider_kwargs(self) -> dict[str, Any]:
-        """Get provider-specific kwargs for LLM client creation."""
+    def _get_provider_kwargs(self, model_type: str = "quick") -> dict[str, Any]:
+        """Get provider-specific kwargs for LLM client creation.
+
+        Args:
+            model_type: "quick" or "deep" — determines which provider config to use
+        """
         kwargs = {}
-        provider = self.config.get("llm_provider", "").lower()
+
+        # Resolve provider for this model type (falls back to single-provider config)
+        provider_key = f"{model_type}_llm_provider" if model_type in ("quick", "deep") else "llm_provider"
+        provider = self.config.get(provider_key) or self.config.get("llm_provider", "openai")
+        provider = provider.lower()
+
+        # Forward API key: check model-type-specific key first, then generic
+        api_key = self.config.get(f"{model_type}_api_key") or self.config.get("api_key")
+        if api_key:
+            kwargs["api_key"] = api_key
 
         if provider == "google":
             thinking_level = self.config.get("google_thinking_level")
@@ -182,6 +193,12 @@ class TradingAgentsGraph:
         max_retries = self.config.get("llm_max_retries")
         if max_retries is not None and max_retries != "":
             kwargs["max_retries"] = _coerce_max_retries(max_retries)
+
+        # HTTP timeout is cross-provider. Forward it only when explicitly set
+        # so each provider keeps its own default (no timeout) otherwise.
+        timeout = self.config.get("llm_timeout")
+        if timeout is not None and timeout != "":
+            kwargs["timeout"] = float(timeout)
 
         return kwargs
 
@@ -374,6 +391,20 @@ class TradingAgentsGraph:
         # Resolve any pending memory-log entries for this ticker before the pipeline runs.
         self._resolve_pending_entries(company_name)
 
+        # ── Market detection integration ──────────────────────────────
+        # Detect market_type (auto or explicit) and apply A-share overrides
+        # to config and analyst selection before checkpoint/graph setup.
+        market_type = self.propagator.resolve_market_type(
+            company_name, self.config.get("market_type", "auto"),
+        )
+        if market_type == "astock":
+            self.propagator.apply_astock_config_overrides(self.config)
+            self.selected_analysts = tuple(
+                list(self.selected_analysts) + list(self.astock_analysts)
+            )
+            self.workflow = self.graph_setup.setup_graph(self.selected_analysts)
+            self.graph = self.workflow.compile()
+
         # Recompile with a checkpointer if the user opted in.
         if self.config.get("checkpoint_enabled"):
             self._checkpointer_ctx = get_checkpointer(
@@ -399,6 +430,7 @@ class TradingAgentsGraph:
             if self._checkpointer_ctx is not None:
                 self._checkpointer_ctx.__exit__(None, None, None)
                 self._checkpointer_ctx = None
+                self.workflow = self._base_workflow
                 self.graph = self.workflow.compile()
 
     def save_reports(self, final_state, ticker, save_path=None) -> Path:
@@ -422,6 +454,9 @@ class TradingAgentsGraph:
         # deterministically resolved instrument identity for all agents.
         past_context = self.memory_log.get_past_context(company_name)
         instrument_context = self.resolve_instrument_context(company_name, asset_type)
+        market_type = self.propagator.resolve_market_type(
+            company_name, self.config.get("market_type", "auto"),
+        )
         init_agent_state = self.propagator.create_initial_state(
             company_name,
             trade_date,
@@ -429,6 +464,9 @@ class TradingAgentsGraph:
             past_context=past_context,
             instrument_context=instrument_context,
         )
+        # Inject market_type into state so agents can branch on it.
+        init_agent_state["market_type"] = market_type
+
         args = self.propagator.get_graph_args()
 
         # Inject thread_id so same ticker+date+graph-shape resumes; a different

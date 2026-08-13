@@ -6,6 +6,7 @@ from tradingagents.agents.utils.agent_states import (
     InvestDebateState,
     RiskDebateState,
 )
+from tradingagents.markets.detector import detect_market_type
 
 
 class Propagator:
@@ -82,3 +83,58 @@ class Propagator:
             "stream_mode": "values",
             "config": config,
         }
+
+    def resolve_market_type(self, ticker: str, market_type: str = "auto") -> str:
+        """Resolve market type from ticker when config says 'auto'.
+
+        When ``market_type`` is ``"auto"`` (the default), delegates to
+        :func:`~tradingagents.markets.detector.detect_market_type`.  Any
+        other value is returned unchanged so explicit overrides always win.
+        """
+        if market_type == "auto":
+            return detect_market_type(ticker)
+        return market_type
+
+    def apply_astock_config_overrides(self, config: dict) -> None:
+        """Apply A-share specific config overrides in-place.
+
+        Switches ``data_vendors`` to ``"a_stock"`` for all data categories
+        and sets ``output_language`` to ``"Chinese"`` when it was English.
+        Only meaningful when ``market_type`` is ``"astock"`` — callers
+        should gate on that before calling.
+        """
+        config["data_vendors"] = {
+            "core_stock_apis": "a_stock",
+            "technical_indicators": "a_stock",
+            "fundamental_data": "a_stock",
+            "news_data": "a_stock",
+            "signal_data": "a_stock",
+        }
+        if config.get("output_language") == "English":
+            config["output_language"] = "Chinese"
+
+    def create_initial_state_with_market_detection(
+        self,
+        company_name: str,
+        trade_date: str,
+        market_type: str = "auto",
+        asset_type: str = "stock",
+        past_context: str = "",
+        instrument_context: str = "",
+    ) -> dict[str, Any]:
+        """Create initial state with ``market_type`` injected.
+
+        Delegates to :meth:`create_initial_state` for the standard fields,
+        then resolves the market type (auto-detecting when ``"auto"``) and
+        injects ``market_type`` into the returned dict.
+        """
+        resolved = self.resolve_market_type(company_name, market_type)
+        state = self.create_initial_state(
+            company_name,
+            trade_date,
+            asset_type=asset_type,
+            past_context=past_context,
+            instrument_context=instrument_context,
+        )
+        state["market_type"] = resolved
+        return state
