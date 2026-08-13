@@ -16,6 +16,7 @@ dependencies = [
     "langchain-google-genai>=4.0.0",
     "langchain-openai>=0.3.23",
     "langgraph>=0.4.8",
+    "mootdx>=0.11.7",
     "langgraph-checkpoint-sqlite>=2.0.0",
     "pandas>=2.3.0",
     "parsel>=1.10.0",
@@ -44,12 +45,18 @@ dev = [
 bedrock = [
     "langchain-aws>=1.5.0",
 ]
+# Desktop GUI backend (FastAPI + SSE). Install with: pip install "tradingagents[gui]"
+gui = [
+    "fastapi>=0.115.0",
+    "granian>=2.0.0",
+    "uvicorn>=0.30.0",
+]
 
 [project.scripts]
 tradingagents = "cli.main:app"
 
 [tool.setuptools.packages.find]
-include = ["tradingagents*", "cli*"]
+include = ["tradingagents*", "cli*", "tradingagents_api*"]
 
 [tool.setuptools.package-data]
 cli = ["static/*"]

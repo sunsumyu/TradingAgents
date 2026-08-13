@@ -1584,9 +1584,7 @@ def get_insider_transactions(
             f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         )
 
-        import re
-
-        sec4_hits = list(re.finditer(r"\r?\n【4\.股东变化】\r?\n", text))
+        sec4_hits = list(_re.finditer(r"\r?\n【4\.股东变化】\r?\n", text))
         if sec4_hits:
             sec4_pos = sec4_hits[-1].start()
             before_sec4 = text[:sec4_pos]
@@ -1713,8 +1711,6 @@ def get_hot_stocks(
     Returns stocks that hit limit-up with human-curated reason tags
     explaining WHY they surged (e.g. '算力租赁+AI政务').
     """
-    import requests
-
     if not curr_date or curr_date.strip() == "":
         curr_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -1729,7 +1725,7 @@ def get_hot_stocks(
                 "Chrome/117.0.0.0 Safari/537.36"
             )
         }
-        r = requests.get(url, headers=headers, timeout=10)
+        r = _requests.get(url, headers=headers, timeout=10)
         data = r.json()
 
         if data.get("errocode", 0) != 0:
@@ -1853,8 +1849,6 @@ def get_northbound_flow(
     History: self-cached daily close snapshots (upstream APIs stopped updating
     northbound history since 2024-08).
     """
-    import requests
-
     hsgt_headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -1876,7 +1870,7 @@ def get_northbound_flow(
 
     try:
         url_rt = "https://data.hexin.cn/market/hsgtApi/method/dayChart/"
-        r = requests.get(url_rt, headers=hsgt_headers, timeout=10)
+        r = _requests.get(url_rt, headers=hsgt_headers, timeout=10)
         d = r.json()
 
         times = d.get("time", [])
@@ -1970,8 +1964,6 @@ def get_concept_blocks(
     Returns industry classification (申万), concept themes, and region.
     Each block includes current day's change percentage.
     """
-    import requests
-
     code = _normalize_ticker(ticker)
 
     try:
@@ -1980,7 +1972,7 @@ def get_concept_blocks(
             f'?stock=[{{"code":"{code}","market":"ab","type":"stock"}}]'
             "&finClientType=pc"
         )
-        r = requests.get(url, headers=_BAIDU_PAE_HEADERS, timeout=10)
+        r = _requests.get(url, headers=_BAIDU_PAE_HEADERS, timeout=10)
         d = r.json()
 
         if str(d.get("ResultCode", -1)) != "0":
@@ -2210,6 +2202,7 @@ def get_dragon_tiger_board(
     lines = [f"# 龙虎榜数据 | {code} | {trade_date} (近{look_back_days}日)"]
 
     # 1. 上榜记录 — eastmoney datacenter direct HTTP
+    data: list[dict] = []
     try:
         data = _eastmoney_datacenter(
             "RPT_DAILYBILLBOARD_DETAILSNEW",
@@ -2240,6 +2233,8 @@ def get_dragon_tiger_board(
         lines.append(f"龙虎榜列表查询失败: {e}")
 
     # 2. 最近上榜的买卖席位 — eastmoney datacenter direct HTTP
+    buy_data: list[dict] = []
+    sell_data: list[dict] = []
     try:
         if data:
             latest_date = str(data[0].get("TRADE_DATE", ""))[:10]
