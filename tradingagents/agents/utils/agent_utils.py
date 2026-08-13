@@ -59,15 +59,12 @@ __all__ = [
     "get_dragon_tiger_board",
     "get_lockup_expiry",
     "get_industry_comparison",
-    "invoke_with_timeout",
     "build_instrument_context",
     "resolve_instrument_identity",
     "get_instrument_context_from_state",
     "get_language_instruction",
     "create_msg_delete",
 ]
-
-logger = logging.getLogger(__name__)
 
 
 def get_language_instruction() -> str:
