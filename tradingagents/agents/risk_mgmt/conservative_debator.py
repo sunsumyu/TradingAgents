@@ -19,6 +19,18 @@ def create_conservative_debator(llm):
         fundamentals_report = state["fundamentals_report"]
         instrument_context = get_instrument_context_from_state(state)
 
+        market_type = state.get("market_type", state.get("asset_type", "us"))
+        astock_risks = ""
+        if market_type == "astock":
+            astock_risks = (
+                "\n\n## A股特有风险因素："
+                "\n- T+1锁定风险：当日买入无法当日止损"
+                "\n- 涨跌停陷阱：连续涨停后可能无法卖出"
+                "\n- 政策反转风险：监管政策随时可能调整"
+                "\n- 散户踩踏：恐慌性抛售可能导致连续跌停"
+                "\n- 大股东减持：限售股解禁后的集中抛压"
+            )
+
         trader_decision = state["trader_investment_plan"]
 
         prompt = f"""As the Conservative Risk Analyst, your primary objective is to protect assets, minimize volatility, and ensure steady, reliable growth. You prioritize stability, security, and risk mitigation, carefully assessing potential losses, economic downturns, and market volatility. When evaluating the trader's decision or plan, critically examine high-risk elements, pointing out where the decision may expose the firm to undue risk and where more cautious alternatives could secure long-term gains. Here is the trader's decision:
@@ -34,7 +46,7 @@ Latest World Affairs Report: {news_report}
 Company Fundamentals Report: {fundamentals_report}
 Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
 
-Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting.""" + get_language_instruction()
+Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting.""" + get_language_instruction() + astock_risks
 
         response = llm.invoke(prompt)
 
