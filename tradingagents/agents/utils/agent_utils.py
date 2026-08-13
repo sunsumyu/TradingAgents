@@ -6,6 +6,8 @@ from typing import Any
 import yfinance as yf
 from langchain_core.messages import HumanMessage, RemoveMessage
 
+logger = logging.getLogger(__name__)
+
 # Import tools from separate utility files
 from tradingagents.agents.utils.core_stock_tools import get_stock_data
 from tradingagents.agents.utils.fundamental_data_tools import (
@@ -22,6 +24,16 @@ from tradingagents.agents.utils.news_data_tools import (
     get_news,
 )
 from tradingagents.agents.utils.prediction_markets_tools import get_prediction_markets
+from tradingagents.agents.utils.signal_data_tools import (
+    get_concept_blocks,
+    get_dragon_tiger_board,
+    get_fund_flow,
+    get_hot_stocks,
+    get_industry_comparison,
+    get_lockup_expiry,
+    get_northbound_flow,
+    get_profit_forecast,
+)
 from tradingagents.agents.utils.technical_indicators_tools import get_indicators
 
 # Public surface: the data tools are imported here so agents and the graph
@@ -39,6 +51,15 @@ __all__ = [
     "get_macro_indicators",
     "get_prediction_markets",
     "get_verified_market_snapshot",
+    "get_profit_forecast",
+    "get_hot_stocks",
+    "get_northbound_flow",
+    "get_concept_blocks",
+    "get_fund_flow",
+    "get_dragon_tiger_board",
+    "get_lockup_expiry",
+    "get_industry_comparison",
+    "invoke_with_timeout",
     "build_instrument_context",
     "resolve_instrument_identity",
     "get_instrument_context_from_state",
@@ -189,15 +210,7 @@ def get_instrument_context_from_state(state: Mapping[str, Any]) -> str:
 
 def create_msg_delete():
     def delete_messages(state):
-        """Clear messages and add a context-anchored placeholder.
-
-        The placeholder must not be a bare ``"Continue"``: some
-        OpenAI-compatible providers interpret that literally as the user task
-        and produce output about the word "continue" instead of analysing the
-        instrument (#888). Anchoring it to the resolved instrument context and
-        date keeps the next analyst on-task even if the provider treats the
-        placeholder as a standalone request.
-        """
+        """Clear messages and add a context-anchored placeholder."""
         messages = state["messages"]
         removal_operations = [RemoveMessage(id=m.id) for m in messages]
 

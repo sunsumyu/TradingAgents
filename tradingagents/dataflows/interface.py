@@ -18,6 +18,7 @@ from .errors import (
     VendorRateLimitError,
 )
 from .fred import get_macro_data as get_fred_macro_data
+from . import a_stock as _a_stock
 from .polymarket import get_prediction_markets as get_polymarket_prediction_markets
 from .y_finance import (
     get_balance_sheet as get_yfinance_balance_sheet,
@@ -74,7 +75,20 @@ TOOLS_CATEGORIES = {
         "tools": [
             "get_prediction_markets",
         ]
-    }
+    },
+    "signal_data": {
+        "description": "A-share signal data tools (profit forecast, hot stocks, fund flow, etc.)",
+        "tools": [
+            "get_profit_forecast",
+            "get_hot_stocks",
+            "get_northbound_flow",
+            "get_concept_blocks",
+            "get_fund_flow",
+            "get_dragon_tiger_board",
+            "get_lockup_expiry",
+            "get_industry_comparison",
+        ],
+    },
 }
 
 VENDOR_LIST = [
@@ -82,6 +96,7 @@ VENDOR_LIST = [
     "fred",
     "polymarket",
     "alpha_vantage",
+    "a_stock",
 ]
 
 # Optional enrichment categories. These add macro/event context to the news
@@ -97,41 +112,50 @@ VENDOR_METHODS = {
     "get_stock_data": {
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
+        "a_stock": _a_stock.get_stock_data,
     },
     # technical_indicators
     "get_indicators": {
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
+        "a_stock": _a_stock.get_indicators,
     },
     # fundamental_data
     "get_fundamentals": {
         "alpha_vantage": get_alpha_vantage_fundamentals,
         "yfinance": get_yfinance_fundamentals,
+        "a_stock": _a_stock.get_fundamentals,
     },
     "get_balance_sheet": {
         "alpha_vantage": get_alpha_vantage_balance_sheet,
         "yfinance": get_yfinance_balance_sheet,
+        "a_stock": _a_stock.get_balance_sheet,
     },
     "get_cashflow": {
         "alpha_vantage": get_alpha_vantage_cashflow,
         "yfinance": get_yfinance_cashflow,
+        "a_stock": _a_stock.get_cashflow,
     },
     "get_income_statement": {
         "alpha_vantage": get_alpha_vantage_income_statement,
         "yfinance": get_yfinance_income_statement,
+        "a_stock": _a_stock.get_income_statement,
     },
     # news_data
     "get_news": {
         "alpha_vantage": get_alpha_vantage_news,
         "yfinance": get_news_yfinance,
+        "a_stock": _a_stock.get_news,
     },
     "get_global_news": {
         "yfinance": get_global_news_yfinance,
         "alpha_vantage": get_alpha_vantage_global_news,
+        "a_stock": _a_stock.get_global_news,
     },
     "get_insider_transactions": {
         "alpha_vantage": get_alpha_vantage_insider_transactions,
         "yfinance": get_yfinance_insider_transactions,
+        "a_stock": _a_stock.get_insider_transactions,
     },
     # macro_data
     "get_macro_indicators": {
@@ -141,6 +165,15 @@ VENDOR_METHODS = {
     "get_prediction_markets": {
         "polymarket": get_polymarket_prediction_markets,
     },
+    # signal_data (a_stock only)
+    "get_profit_forecast": {"a_stock": _a_stock.get_profit_forecast},
+    "get_hot_stocks": {"a_stock": _a_stock.get_hot_stocks},
+    "get_northbound_flow": {"a_stock": _a_stock.get_northbound_flow},
+    "get_concept_blocks": {"a_stock": _a_stock.get_concept_blocks},
+    "get_fund_flow": {"a_stock": _a_stock.get_fund_flow},
+    "get_dragon_tiger_board": {"a_stock": _a_stock.get_dragon_tiger_board},
+    "get_lockup_expiry": {"a_stock": _a_stock.get_lockup_expiry},
+    "get_industry_comparison": {"a_stock": _a_stock.get_industry_comparison},
 }
 
 def get_category_for_method(method: str) -> str:
