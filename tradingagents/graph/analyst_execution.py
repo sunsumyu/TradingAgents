@@ -52,13 +52,39 @@ ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
     ),
 }
 
+ASTOCK_ANALYST_NODE_SPECS: dict[str, AnalystNodeSpec] = {
+    "policy": AnalystNodeSpec(
+        key="policy",
+        agent_node="Policy Analyst",
+        clear_node="Msg Clear Policy",
+        tool_node="tools_policy",
+        report_key="policy_report",
+    ),
+    "hot_money": AnalystNodeSpec(
+        key="hot_money",
+        agent_node="Hot Money Analyst",
+        clear_node="Msg Clear Hot Money",
+        tool_node="tools_hot_money",
+        report_key="hot_money_report",
+    ),
+    "lockup": AnalystNodeSpec(
+        key="lockup",
+        agent_node="Lockup Analyst",
+        clear_node="Msg Clear Lockup",
+        tool_node="tools_lockup",
+        report_key="lockup_report",
+    ),
+}
+
+ALL_ANALYST_SPECS = {**ANALYST_NODE_SPECS, **ASTOCK_ANALYST_NODE_SPECS}
+
 
 def build_analyst_execution_plan(
     selected_analysts: Iterable[str],
 ) -> AnalystExecutionPlan:
     specs: list[AnalystNodeSpec] = []
     for analyst_key in selected_analysts:
-        spec = ANALYST_NODE_SPECS.get(analyst_key)
+        spec = ALL_ANALYST_SPECS.get(analyst_key)
         if spec is None:
             raise ValueError(f"unknown analyst key: {analyst_key}")
         specs.append(spec)
@@ -80,7 +106,7 @@ class AnalystWallTimeTracker:
         self._wall_times: dict[str, float] = {}
 
     def mark_started(self, analyst_key: str, started_at: float | None = None) -> None:
-        if analyst_key not in ANALYST_NODE_SPECS:
+        if analyst_key not in ALL_ANALYST_SPECS:
             raise ValueError(f"unknown analyst key: {analyst_key}")
         self._started_at.setdefault(analyst_key, monotonic() if started_at is None else started_at)
 
@@ -89,7 +115,7 @@ class AnalystWallTimeTracker:
         analyst_key: str,
         completed_at: float | None = None,
     ) -> None:
-        if analyst_key not in ANALYST_NODE_SPECS:
+        if analyst_key not in ALL_ANALYST_SPECS:
             raise ValueError(f"unknown analyst key: {analyst_key}")
         if analyst_key in self._wall_times:
             return
