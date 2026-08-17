@@ -15,14 +15,23 @@ from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
     get_balance_sheet,
     get_cashflow,
+    get_chip_distribution,
+    get_concept_blocks,
+    get_dragon_tiger_board,
+    get_fund_flow,
     get_fundamentals,
     get_global_news,
+    get_hot_stocks,
     get_income_statement,
     get_indicators,
+    get_industry_comparison,
     get_insider_transactions,
+    get_lockup_expiry,
     get_macro_indicators,
     get_news,
+    get_northbound_flow,
     get_prediction_markets,
+    get_profit_forecast,
     get_stock_data,
     get_verified_market_snapshot,
     resolve_instrument_identity,
@@ -240,6 +249,35 @@ class TradingAgentsGraph:
                     get_balance_sheet,
                     get_cashflow,
                     get_income_statement,
+                ]
+            ),
+            # A-share analysts
+            "policy": ToolNode(
+                [
+                    get_news,
+                    get_global_news,
+                ]
+            ),
+            "hot_money": ToolNode(
+                [
+                    get_stock_data,
+                    get_news,
+                    get_insider_transactions,
+                    get_hot_stocks,
+                    get_northbound_flow,
+                    get_concept_blocks,
+                    get_fund_flow,
+                    get_dragon_tiger_board,
+                    get_industry_comparison,
+                ]
+            ),
+            "lockup": ToolNode(
+                [
+                    get_insider_transactions,
+                    get_news,
+                    get_fundamentals,
+                    get_lockup_expiry,
+                    get_chip_distribution,
                 ]
             ),
         }

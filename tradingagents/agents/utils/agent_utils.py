@@ -25,6 +25,7 @@ from tradingagents.agents.utils.news_data_tools import (
 )
 from tradingagents.agents.utils.prediction_markets_tools import get_prediction_markets
 from tradingagents.agents.utils.signal_data_tools import (
+    get_chip_distribution,
     get_concept_blocks,
     get_dragon_tiger_board,
     get_fund_flow,
