@@ -19,22 +19,23 @@ def write_report_tree(final_state: dict, ticker: str, save_path) -> Path:
     # 1. Analysts
     analysts_dir = save_path / "1_analysts"
     analyst_parts = []
-    if final_state.get("market_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "market.md").write_text(final_state["market_report"], encoding="utf-8")
-        analyst_parts.append(("Market Analyst", final_state["market_report"]))
-    if final_state.get("sentiment_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"], encoding="utf-8")
-        analyst_parts.append(("Sentiment Analyst", final_state["sentiment_report"]))
-    if final_state.get("news_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "news.md").write_text(final_state["news_report"], encoding="utf-8")
-        analyst_parts.append(("News Analyst", final_state["news_report"]))
-    if final_state.get("fundamentals_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"], encoding="utf-8")
-        analyst_parts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+    # (state key, file stem, section title) — includes the A-share analysts
+    # (policy / hot money / lockup) whose reports are only present when the
+    # run targeted the A-share market.
+    analyst_sections = [
+        ("market_report", "market", "Market Analyst"),
+        ("sentiment_report", "sentiment", "Sentiment Analyst"),
+        ("news_report", "news", "News Analyst"),
+        ("fundamentals_report", "fundamentals", "Fundamentals Analyst"),
+        ("policy_report", "policy", "Policy Analyst"),
+        ("hot_money_report", "hot_money", "Hot Money Analyst"),
+        ("lockup_report", "lockup", "Lockup Analyst"),
+    ]
+    for state_key, stem, title in analyst_sections:
+        if final_state.get(state_key):
+            analysts_dir.mkdir(exist_ok=True)
+            (analysts_dir / f"{stem}.md").write_text(final_state[state_key], encoding="utf-8")
+            analyst_parts.append((title, final_state[state_key]))
     if analyst_parts:
         content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
         sections.append(f"## I. Analyst Team Reports\n\n{content}")

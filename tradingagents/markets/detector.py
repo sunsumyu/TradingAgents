@@ -15,9 +15,9 @@ def detect_market_type(ticker: str) -> str:
     """Detect market type from a ticker symbol.
 
     Returns one of: "astock", "us", "hk", "crypto".
-    Falls back to "us" for ambiguous inputs.
+    Falls back to "us" for ambiguous, empty, or None inputs.
     """
-    t = ticker.strip()
+    t = (ticker or "").strip()
 
     if _ASTOCK_6DIGIT.match(t):
         return "astock"

@@ -329,6 +329,13 @@ class OpenAIClient(BaseLLMClient):
                 continue
             llm_kwargs[key] = self.kwargs[key]
 
+        # Default per-request timeout to prevent indefinite hangs
+        if "request_timeout" not in llm_kwargs:
+            llm_kwargs["request_timeout"] = 120
+
+        # Enable streaming so on_chat_model_stream callback fires per-token
+        llm_kwargs.setdefault("streaming", True)
+
         # The subclass (provider quirks) comes from the registry spec.
         return chat_cls(**llm_kwargs)
 

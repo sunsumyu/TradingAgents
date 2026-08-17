@@ -50,6 +50,9 @@ class GoogleClient(BaseLLMClient):
                 thinking_level = "low"
             llm_kwargs["thinking_level"] = thinking_level
 
+        # Enable streaming so on_chat_model_stream callback fires per-token
+        llm_kwargs.setdefault("streaming", True)
+
         return NormalizedChatGoogleGenerativeAI(**llm_kwargs)
 
     def validate_model(self) -> bool:

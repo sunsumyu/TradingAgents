@@ -38,6 +38,10 @@ ANALYST_REPORT_KEYS = {
     "social": "sentiment_report",
     "news": "news_report",
     "fundamentals": "fundamentals_report",
+    # A-share analysts
+    "policy": "policy_report",
+    "hot_money": "hot_money_report",
+    "lockup": "lockup_report",
 }
 
 # Ordered pipeline phases for progress tracking
@@ -203,6 +207,10 @@ ANTHROPOLOGIST_NAMES = {
     "social": "Sentiment Analyst",
     "news": "News Analyst",
     "fundamentals": "Fundamentals Analyst",
+    # A-share analysts
+    "policy": "Policy Analyst",
+    "hot_money": "Hot Money Analyst",
+    "lockup": "Lockup Analyst",
 }
 
 
@@ -466,6 +474,37 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
         from tradingagents.markets.detector import detect_market_type
 
         market_type = request.market_type or detect_market_type(request.ticker)
+        logger.info("Detected market_type: %s for ticker %s", market_type, request.ticker)
+
+        # Apply A-share overrides: switch vendors and add A-share analysts
+        if market_type == "astock":
+            config["data_vendors"] = {
+                "core_stock_apis": "a_stock",
+                "technical_indicators": "a_stock",
+                "fundamental_data": "a_stock",
+                "news_data": "a_stock",
+                "signal_data": "a_stock",
+            }
+            if config.get("output_language") == "English":
+                config["output_language"] = "Chinese"
+            # Add A-share analysts if not already included
+            astock_analysts = ("policy", "hot_money", "lockup")
+            current_analysts = list(selected)
+            for a in astock_analysts:
+                if a not in current_analysts:
+                    current_analysts.append(a)
+            selected = tuple(current_analysts)
+            logger.info("A-share mode: analysts=%s, vendors=a_stock", selected)
+            # Recreate graph with updated analysts
+            graph = TradingAgentsGraph(
+                selected_analysts=selected,
+                debug=False,
+                config=config,
+                callbacks=[progress_handler],
+            )
+
+        # Inject market_type into state
+        config["market_type"] = market_type
 
         # Initialize state
         instrument_context = graph.resolve_instrument_context(request.ticker, market_type)
@@ -475,6 +514,7 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
             asset_type=market_type,
             instrument_context=instrument_context,
         )
+        init_state["market_type"] = market_type
         args = graph.propagator.get_graph_args()
 
         # Stream chunks and track progress

@@ -1,5 +1,46 @@
+from langchain_core.language_models import BaseChatModel
 
 from .base_client import BaseLLMClient
+
+
+def create_quick_llm(config: dict, **kwargs) -> BaseChatModel:
+    """Create the quick-thinking LLM with its configured provider.
+
+    Uses ``quick_llm_provider`` if set, otherwise falls back to ``llm_provider``.
+
+    Args:
+        config: TradingAgents config dict
+        **kwargs: Additional provider-specific arguments (api_key, etc.)
+
+    Returns:
+        Configured chat model instance
+    """
+    provider = config.get("quick_llm_provider") or config.get("llm_provider", "openai")
+    model = config.get("quick_think_llm", "gpt-4o-mini")
+    base_url = config.get("backend_url_quick") or config.get("backend_url")
+
+    client = create_llm_client(provider, model, base_url, **kwargs)
+    return client.get_llm()
+
+
+def create_deep_llm(config: dict, **kwargs) -> BaseChatModel:
+    """Create the deep-thinking LLM with its configured provider.
+
+    Uses ``deep_llm_provider`` if set, otherwise falls back to ``llm_provider``.
+
+    Args:
+        config: TradingAgents config dict
+        **kwargs: Additional provider-specific arguments (api_key, etc.)
+
+    Returns:
+        Configured chat model instance
+    """
+    provider = config.get("deep_llm_provider") or config.get("llm_provider", "openai")
+    model = config.get("deep_think_llm", "gpt-4o")
+    base_url = config.get("backend_url_deep") or config.get("backend_url")
+
+    client = create_llm_client(provider, model, base_url, **kwargs)
+    return client.get_llm()
 
 
 def create_llm_client(

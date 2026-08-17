@@ -94,14 +94,17 @@ MODEL_OPTIONS: ProviderModeOptions = {
     },
     "anthropic": {
         "quick": [
-            ("Claude Sonnet 5 - Best speed and intelligence balance", "claude-sonnet-5"),
-            ("Claude Haiku 4.5 - Fastest with near-frontier intelligence", "claude-haiku-4-5"),
+            ("Claude Sonnet 4 - Best speed and intelligence balance", "claude-sonnet-4-20250514"),
+            ("Claude Haiku 4 - Fastest with near-frontier intelligence", "claude-haiku-4-20250414"),
+            ("Claude 3.5 Sonnet - Previous-gen, strong coding", "claude-3-5-sonnet-20241022"),
+            ("Custom model ID", "custom"),
         ],
         "deep": [
-            ("Claude Fable 5 - Most capable, long-running agents", "claude-fable-5"),
-            ("Claude Opus 4.8 - Frontier agentic coding and reasoning", "claude-opus-4-8"),
-            ("Claude Sonnet 5 - Near-frontier intelligence at Sonnet cost", "claude-sonnet-5"),
-            ("Claude Opus 4.7 - Previous frontier, long-running agents", "claude-opus-4-7"),
+            ("Claude Opus 4 - Most capable, frontier reasoning", "claude-opus-4-20250514"),
+            ("Claude Sonnet 4 - Balanced speed/intelligence", "claude-sonnet-4-20250514"),
+            ("Claude 3.5 Sonnet - Previous-gen, cost-effective", "claude-3-5-sonnet-20241022"),
+            ("Claude 3.5 Haiku - Fastest, light tasks", "claude-3-5-haiku-20241022"),
+            ("Custom model ID", "custom"),
         ],
     },
     "google": {

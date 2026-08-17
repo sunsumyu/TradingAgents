@@ -231,6 +231,52 @@ _, decision = ta.propagate("NVDA", "2026-01-15")
 print(decision)
 ```
 
+### Multi-Platform LLM Configuration
+
+TradingAgents supports using different LLM providers for quick-thinking and deep-thinking models. This allows you to combine capabilities from multiple platforms (e.g., use Anthropic for deep analysis and OpenAI for fast responses).
+
+```python
+from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.default_config import DEFAULT_CONFIG
+
+config = DEFAULT_CONFIG.copy()
+
+# Quick model: use Anthropic for fast analyst reports
+config["quick_llm_provider"] = "anthropic"
+config["quick_think_llm"] = "Kimi"
+config["backend_url_quick"] = "http://your-proxy:8080/anthropic"  # optional
+
+# Deep model: use OpenAI for complex reasoning
+config["deep_llm_provider"] = "openai"
+config["deep_think_llm"] = "gpt-4o"
+config["backend_url_deep"] = "http://your-proxy:8080/openai"  # optional
+
+ta = TradingAgentsGraph(debug=True, config=config)
+_, decision = ta.propagate("NVDA", "2026-01-15")
+print(decision)
+```
+
+**Configuration Keys:**
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `quick_llm_provider` | Provider for quick-thinking model | Falls back to `llm_provider` |
+| `quick_think_llm` | Model ID for quick analysis | `gpt-4o-mini` |
+| `backend_url_quick` | Base URL for quick model API | Falls back to `backend_url` |
+| `deep_llm_provider` | Provider for deep-thinking model | Falls back to `llm_provider` |
+| `deep_think_llm` | Model ID for deep analysis | `gpt-4o` |
+| `backend_url_deep` | Base URL for deep model API | Falls back to `backend_url` |
+
+**Environment Variables:**
+
+```bash
+# Multi-platform LLM config
+TRADINGAGENTS_QUICK_LLM_PROVIDER=anthropic
+TRADINGAGENTS_DEEP_LLM_PROVIDER=openai
+TRADINGAGENTS_BACKEND_URL_QUICK=http://proxy:8080/anthropic
+TRADINGAGENTS_BACKEND_URL_DEEP=http://proxy:8080/openai
+```
+
 See `tradingagents/default_config.py` for all configuration options.
 
 ## Persistence and Recovery

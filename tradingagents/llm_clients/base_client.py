@@ -38,9 +38,22 @@ class BaseLLMClient(ABC):
         return self.__class__.__name__.removesuffix("Client").lower()
 
     def warn_if_unknown_model(self) -> None:
-        """Warn when the model is outside the known list for the provider."""
+        """Warn when the model is outside the known list for the provider.
+
+        When a custom base_url is set (proxy/relay), the model is checked
+        against ALL providers' known lists, since the proxy may serve models
+        from a different provider than the one selected in the UI.
+        """
         if self.validate_model():
             return
+
+        # Proxy scenario: model might belong to a different provider
+        if self.base_url:
+            from .model_catalog import get_known_models
+            all_known = get_known_models()
+            for provider_models in all_known.values():
+                if self.model in provider_models:
+                    return  # model found in another provider's catalog
 
         warnings.warn(
             (

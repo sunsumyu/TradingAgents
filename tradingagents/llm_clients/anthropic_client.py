@@ -56,6 +56,10 @@ class AnthropicClient(BaseLLMClient):
     def __init__(self, model: str, base_url: str | None = None, **kwargs):
         super().__init__(model, base_url, **kwargs)
 
+    # Default per-request timeout (seconds) — prevents indefinite hangs
+    # when the upstream provider is unresponsive.
+    _DEFAULT_TIMEOUT = 120
+
     def get_llm(self) -> Any:
         """Return configured ChatAnthropic instance."""
         self.warn_if_unknown_model()
@@ -70,6 +74,13 @@ class AnthropicClient(BaseLLMClient):
             if key == "effort" and not _supports_effort(self.model):
                 continue
             llm_kwargs[key] = self.kwargs[key]
+
+        # Ensure a timeout is always set to prevent indefinite hangs
+        if "timeout" not in llm_kwargs:
+            llm_kwargs["timeout"] = self._DEFAULT_TIMEOUT
+
+        # Enable streaming so on_chat_model_stream callback fires per-token
+        llm_kwargs.setdefault("streaming", True)
 
         return NormalizedChatAnthropic(**llm_kwargs)
 

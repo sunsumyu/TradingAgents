@@ -394,10 +394,20 @@ class TradingAgentsGraph:
         # ── Market detection integration ──────────────────────────────
         # Detect market_type (auto or explicit) and apply A-share overrides
         # to config and analyst selection before checkpoint/graph setup.
+        #
+        # C1 FIX: Save originals before mutation so a subsequent run with a
+        # different market_type doesn't inherit A-share overrides.
+        _UNSET = object()  # sentinel: distinguishes "missing key" from None
+        _orig_selected_analysts = self.selected_analysts
+        _orig_data_vendors = self.config.get("data_vendors", _UNSET)
+        _orig_output_language = self.config.get("output_language", _UNSET)
+        _astock_applied = False
+
         market_type = self.propagator.resolve_market_type(
             company_name, self.config.get("market_type", "auto"),
         )
         if market_type == "astock":
+            _astock_applied = True
             self.propagator.apply_astock_config_overrides(self.config)
             self.selected_analysts = tuple(
                 list(self.selected_analysts) + list(self.astock_analysts)
@@ -427,6 +437,20 @@ class TradingAgentsGraph:
         try:
             return self._run_graph(company_name, trade_date, asset_type=asset_type)
         finally:
+            # C1 FIX: Restore original state so the next run isn't polluted
+            # by A-share overrides from a previous run.
+            if _astock_applied:
+                self.selected_analysts = _orig_selected_analysts
+                if _orig_data_vendors is _UNSET:
+                    self.config.pop("data_vendors", None)
+                else:
+                    self.config["data_vendors"] = _orig_data_vendors
+                if _orig_output_language is _UNSET:
+                    self.config.pop("output_language", None)
+                else:
+                    self.config["output_language"] = _orig_output_language
+                self.workflow = self._base_workflow
+                self.graph = self.workflow.compile()
             if self._checkpointer_ctx is not None:
                 self._checkpointer_ctx.__exit__(None, None, None)
                 self._checkpointer_ctx = None
@@ -528,6 +552,10 @@ class TradingAgentsGraph:
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
+            # A-share analyst reports; empty strings for non-A-share runs.
+            "policy_report": final_state.get("policy_report", ""),
+            "hot_money_report": final_state.get("hot_money_report", ""),
+            "lockup_report": final_state.get("lockup_report", ""),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],
