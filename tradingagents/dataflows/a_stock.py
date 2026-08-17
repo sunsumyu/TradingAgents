@@ -913,6 +913,16 @@ _INDICATOR_DESCRIPTIONS = {
     "atr": "ATR: Average True Range volatility measure.",
     "vwma": "VWMA: Volume-weighted moving average.",
     "mfi": "MFI: Money Flow Index (volume + price momentum).",
+    # KDJ (Stochastic Oscillator) — popular in A-share analysis
+    "kdjk": "KDJ K: Stochastic %K line — fast momentum oscillator.",
+    "kdjd": "KDJ D: Stochastic %D signal line — smoothed K.",
+    "kdjj": "KDJ J: Divergence line (3K-2D) — amplifies signals.",
+    # SKDJ (Smoothed KDJ) — reduces false signals
+    "skdj_k": "SKDJ K: Smoothed KDJ K — less noisy in choppy markets.",
+    "skdj_d": "SKDJ D: Smoothed KDJ D signal line.",
+    # EXPMA (Exponential Moving Average)
+    "expma_12": "EXPMA 12: Short-term exponential moving average.",
+    "expma_50": "EXPMA 50: Medium-term exponential moving average.",
 }
 
 
@@ -940,8 +950,19 @@ def get_indicators(
         df = wrap(data)
         df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
-        # Trigger stockstats calculation
-        df[indicator]
+        # Handle SKDJ (Smoothed KDJ) — not built into stockstats
+        if indicator in ("skdj_k", "skdj_d"):
+            df["kdjk"]  # triggers KDJ computation
+            df["skdj_k"] = df["kdjk"].rolling(window=5, min_periods=1).mean()
+            df["skdj_d"] = df["skdj_k"].rolling(window=3, min_periods=1).mean()
+        # Handle EXPMA — map to existing EMA columns
+        elif indicator == "expma_12":
+            df["expma_12"] = df["close_12_ema"]
+        elif indicator == "expma_50":
+            df["expma_50"] = df["close_50_ema"]
+        else:
+            # Trigger stockstats calculation
+            df[indicator]
 
         # Build date -> value lookup
         ind_dict = {}
@@ -2456,3 +2477,123 @@ def get_industry_comparison(
         lines.append(f"行业对比查询失败: {e}")
 
     return "\n".join(lines)
+
+
+# ---- 18. get_chip_distribution ----
+
+
+def get_chip_distribution(
+    symbol: Annotated[str, "A-stock code"],
+    curr_date: Annotated[str, "Current date YYYY-mm-dd"],
+    days: Annotated[int, "Number of days to analyze for chip accumulation"] = 90,
+) -> str:
+    """Estimate chip (筹码) distribution from historical OHLCV data.
+
+    Uses a simplified cost-weighted model:
+    - Each day's volume is distributed across the price range (low..high)
+    - Chips decay over time (older chips have less weight)
+    - Output shows the % of chips at each price level
+    """
+    code = _normalize_ticker(symbol)
+
+    try:
+        data = _load_ohlcv_astock(code, curr_date, days=max(days + 30, 120))
+        if data is None or data.empty:
+            return f"无法获取 {code} 的历史数据"
+
+        df = data.copy()
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.sort_values("Date")
+
+        curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+        cutoff = curr_dt - timedelta(days=days)
+        df = df[df["Date"] <= pd.Timestamp(curr_dt)]
+        df = df[df["Date"] >= pd.Timestamp(cutoff)]
+
+        if df.empty:
+            return f"{code} 在最近 {days} 天无交易数据"
+
+        # Build chip distribution using volume-weighted cost model
+        price_min = df["low"].min()
+        price_max = df["high"].max()
+        if price_max <= price_min:
+            return f"{code} 价格区间异常"
+
+        num_bins = 20
+        bin_edges = pd.linspace(price_min, price_max, num_bins + 1)
+        chip_counts = np.zeros(num_bins)
+
+        for _, row in df.iterrows():
+            day_high = row["high"]
+            day_low = row["low"]
+            day_vol = row["volume"]
+            day_date = row["Date"]
+            # Time decay: more recent = more weight
+            days_ago = (curr_dt - day_date).days
+            decay = max(0.1, 1.0 - days_ago / (days * 1.5))
+
+            # Distribute volume across the price range for this day
+            for i in range(num_bins):
+                bin_low, bin_high = bin_edges[i], bin_edges[i + 1]
+                overlap_low = max(day_low, bin_low)
+                overlap_high = min(day_high, bin_high)
+                if overlap_high > overlap_low and day_high > day_low:
+                    fraction = (overlap_high - overlap_low) / (day_high - day_low)
+                    chip_counts[i] += fraction * day_vol * decay
+
+        total = chip_counts.sum()
+        if total <= 0:
+            return f"{code} 筹码计算结果为空"
+
+        chip_pct = chip_counts / total * 100
+
+        # Find key levels
+        max_idx = np.argmax(chip_pct)
+        peak_price = (bin_edges[max_idx] + bin_edges[max_idx + 1]) / 2
+
+        # Cost distribution summary
+        avg_cost = sum(
+            (bin_edges[i] + bin_edges[i + 1]) / 2 * chip_pct[i]
+            for i in range(num_bins)
+        ) / 100
+
+        # Profit ratio (based on current price)
+        last_close = df["close"].iloc[-1]
+        profit_chips = sum(
+            chip_pct[i]
+            for i in range(num_bins)
+            if (bin_edges[i] + bin_edges[i + 1]) / 2 < last_close
+        )
+
+        lines = [
+            f"## 筹码分布分析: {code} (最近 {days} 天)",
+            f"当前价: {last_close:.2f}",
+            f"筹码峰值价: {peak_price:.2f}",
+            f"平均成本: {avg_cost:.2f}",
+            f"获利盘比例: {profit_chips:.1f}%",
+            "",
+            "价格区间 | 筹码占比 | 柱状图",
+            "-" * 50,
+        ]
+
+        max_bar = 30
+        for i in range(num_bins):
+            price_mid = (bin_edges[i] + bin_edges[i + 1]) / 2
+            pct = chip_pct[i]
+            bar_len = int(pct / max(chip_pct) * max_bar) if max(chip_pct) > 0 else 0
+            bar = "█" * bar_len
+            marker = " ◄ 峰值" if i == max_idx else ""
+            lines.append(f"  {price_mid:8.2f} | {pct:5.1f}% | {bar}{marker}")
+
+        lines.extend([
+            "",
+            "### 筹码分析要点:",
+            f"- 套牢盘 ({last_close:.2f} 以上): {100 - profit_chips:.1f}%",
+            f"- 获利盘 ({last_close:.2f} 以下): {profit_chips:.1f}%",
+            f"- 筹码集中度: 峰值在 {peak_price:.2f}",
+        ])
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        return f"筹码分布查询失败: {e}"

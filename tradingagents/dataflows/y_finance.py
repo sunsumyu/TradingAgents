@@ -149,6 +149,44 @@ def get_stock_stats_indicators_window(
             "Usage: Identify overbought (>80) or oversold (<20) conditions and confirm the strength of trends or reversals. "
             "Tips: Use alongside RSI or MACD to confirm signals; divergence between price and MFI can indicate potential reversals."
         ),
+        # KDJ (Stochastic Oscillator)
+        "kdjk": (
+            "KDJ K: The fast line of the KDJ stochastic oscillator (Stochastic %K). "
+            "Usage: Identify overbought (>80) or oversold (<20) conditions and spot momentum shifts. "
+            "Tips: K is very responsive; combine with D line for crossover signals."
+        ),
+        "kdjd": (
+            "KDJ D: The smoothed signal line of KDJ (Stochastic %D). "
+            "Usage: Crossovers with K line generate buy/sell signals. "
+            "Tips: D lags K; use D for confirmation rather than early entries."
+        ),
+        "kdjj": (
+            "KDJ J: The divergence line (3K - 2D) amplifying KDJ signals. "
+            "Usage: J > 100 or J < 0 signals extreme overbought/oversold. "
+            "Tips: J is the most volatile; best for spotting turning points."
+        ),
+        # SKDJ (Smoothed KDJ)
+        "skdj_k": (
+            "SKDJ K: Smoothed KDJ K line — applies SMA smoothing to raw KDJ K to reduce noise. "
+            "Usage: Same as KDJ but with fewer false signals in choppy markets. "
+            "Tips: More reliable than raw KDJ for A-share stocks with high retail investor participation."
+        ),
+        "skdj_d": (
+            "SKDJ D: Smoothed KDJ D line — the signal line for SKDJ. "
+            "Usage: Crossovers with SKDJ K generate cleaner buy/sell signals. "
+            "Tips: Slower but more reliable than standard KDJ D."
+        ),
+        # EXPMA (Exponential Moving Average)
+        "expma_12": (
+            "EXPMA 12: 12-period Exponential Moving Average for short-term trend. "
+            "Usage: Quick response to price changes; acts as dynamic support/resistance. "
+            "Tips: Combine with longer EXPMA for crossover signals."
+        ),
+        "expma_50": (
+            "EXPMA 50: 50-period Exponential Moving Average for medium-term trend. "
+            "Usage: Confirms trend direction and acts as major support/resistance level. "
+            "Tips: Price above EXPMA50 = bullish; below = bearish."
+        ),
     }
 
     if indicator not in best_ind_params:
@@ -225,8 +263,22 @@ def _get_stock_stats_bulk(
     df = wrap(data)
     df["Date"] = df["Date"].dt.strftime("%Y-%m-%d")
 
-    # Calculate the indicator for all rows at once
-    df[indicator]  # This triggers stockstats to calculate the indicator
+    # Handle SKDJ (Smoothed KDJ) — not built into stockstats
+    if indicator in ("skdj_k", "skdj_d"):
+        # First compute raw KDJ
+        df["kdjk"]  # triggers KDJ computation
+        # Smooth KDJ K with 5-period SMA to get SKDJ K
+        df["skdj_k"] = df["kdjk"].rolling(window=5, min_periods=1).mean()
+        # SKDJ D = smoothed version of SKDJ K
+        df["skdj_d"] = df["skdj_k"].rolling(window=3, min_periods=1).mean()
+    # Handle EXPMA — map to existing EMA columns
+    elif indicator == "expma_12":
+        df["expma_12"] = df["close_12_ema"]
+    elif indicator == "expma_50":
+        df["expma_50"] = df["close_50_ema"]
+    else:
+        # Standard indicator — triggers stockstats computation
+        df[indicator]
 
     # Create a dictionary mapping date strings to indicator values
     result_dict = {}

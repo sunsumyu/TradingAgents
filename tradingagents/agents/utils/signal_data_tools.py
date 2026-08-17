@@ -136,3 +136,24 @@ def get_industry_comparison(
         Sector performance ranking with the target stock's sector highlighted
     """
     return route_to_vendor("get_industry_comparison", ticker, trade_date, top_n)
+
+
+@tool
+def get_chip_distribution(
+    ticker: Annotated[str, "A-share stock code"],
+    curr_date: Annotated[str, "Current date YYYY-MM-DD"],
+    days: Annotated[int, "Number of days to analyze for chip accumulation"] = 90,
+) -> str:
+    """Get chip (筹码) distribution analysis for A-share stocks.
+
+    Shows the distribution of shares at different cost levels,
+    helping identify support/resistance zones and profit/loss ratios.
+
+    Args:
+        ticker: 6-digit A-share stock code
+        curr_date: Current date in YYYY-MM-DD format
+        days: Number of historical days to analyze (default 90)
+    Returns:
+        Chip distribution chart with peak cost, average cost, and profit ratio
+    """
+    return route_to_vendor("get_chip_distribution", ticker, curr_date, days)

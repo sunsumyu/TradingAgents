@@ -87,6 +87,7 @@ TOOLS_CATEGORIES = {
             "get_dragon_tiger_board",
             "get_lockup_expiry",
             "get_industry_comparison",
+            "get_chip_distribution",
         ],
     },
 }
@@ -174,6 +175,7 @@ VENDOR_METHODS = {
     "get_dragon_tiger_board": {"a_stock": _a_stock.get_dragon_tiger_board},
     "get_lockup_expiry": {"a_stock": _a_stock.get_lockup_expiry},
     "get_industry_comparison": {"a_stock": _a_stock.get_industry_comparison},
+    "get_chip_distribution": {"a_stock": _a_stock.get_chip_distribution},
 }
 
 def get_category_for_method(method: str) -> str:

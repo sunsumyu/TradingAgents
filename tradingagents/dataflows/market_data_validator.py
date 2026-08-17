@@ -22,6 +22,7 @@ DEFAULT_SNAPSHOT_INDICATORS: tuple[str, ...] = (
     "close_10_ema", "close_50_sma", "close_200_sma",
     "rsi", "boll", "boll_ub", "boll_lb",
     "macd", "macds", "macdh", "atr",
+    "kdjk", "kdjd", "kdjj",
 )
 
 
