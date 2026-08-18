@@ -64,6 +64,20 @@ class ResolveInstrumentIdentityTests(unittest.TestCase):
         mock.assert_called_once()  # second call served from cache
         self.assertEqual(first, second)
 
+    def test_skips_yahoo_for_astock_ticker(self):
+        # A-share tickers have no Yahoo presence; yfinance would 404 noisily.
+        # Identity resolution must skip the round-trip entirely (#astock).
+        with patch("tradingagents.agents.utils.agent_utils.yf.Ticker") as mock:
+            identity = resolve_instrument_identity("600519")
+        mock.assert_not_called()
+        self.assertEqual(identity, {})
+
+    def test_astock_with_suffix_also_skips_yahoo(self):
+        with patch("tradingagents.agents.utils.agent_utils.yf.Ticker") as mock:
+            identity = resolve_instrument_identity("600519.SS")
+        mock.assert_not_called()
+        self.assertEqual(identity, {})
+
 
 @pytest.mark.unit
 class BuildInstrumentContextTests(unittest.TestCase):

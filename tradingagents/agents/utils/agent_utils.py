@@ -114,6 +114,15 @@ def resolve_instrument_identity(ticker: str) -> dict:
     resolves for the same instrument the price path actually fetches (#983).
     """
     from tradingagents.dataflows.symbol_utils import normalize_symbol
+    from tradingagents.markets.detector import detect_market_type
+
+    # A-share tickers have no Yahoo presence: yfinance logs a noisy 404 for
+    # them and returns nothing usable. Skip the pointless round-trip so A-share
+    # runs don't spam "Quote not found for symbol: 600519"-style errors and
+    # fall back to ticker-only context instead.
+    if detect_market_type(ticker) == "astock":
+        logger.debug("Skipping Yahoo identity lookup for A-share ticker %s", ticker)
+        return {}
 
     try:
         info = yf.Ticker(normalize_symbol(ticker)).info or {}

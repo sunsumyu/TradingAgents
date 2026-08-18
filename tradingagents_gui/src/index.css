@@ -1,0 +1,169 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background-color: #131722;
+    color: #d1d4dc;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+  input,
+  textarea {
+    user-select: text;
+  }
+}
+
+@layer components {
+  /* Thin scrollbars */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #363a45;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4a4f5c;
+  }
+
+  /* Card section */
+  .card {
+    @apply bg-bg-secondary border border-line rounded-[3px] shadow-card;
+  }
+
+  /* Section title with accent bar */
+  .section-title {
+    @apply flex items-center gap-2 text-[13px] font-medium text-text-primary mb-1.5;
+  }
+  .section-title::before {
+    content: "";
+    @apply block w-[3px] h-[14px] bg-accent rounded-[1px];
+  }
+
+  /* Inputs */
+  .input {
+    @apply bg-bg-surface border border-line rounded-[3px] px-2 py-1.5 text-[12px] text-text-primary
+      outline-none transition-colors duration-100 placeholder:text-text-muted;
+  }
+  .input:focus {
+    @apply border-accent;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-[3px] px-3 py-1.5 text-[12px]
+      font-medium transition-colors duration-100 cursor-pointer select-none whitespace-nowrap;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-hover;
+  }
+  .btn-primary:disabled {
+    @apply bg-text-muted text-neutral-300 cursor-not-allowed hover:bg-text-muted opacity-60;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-text-secondary border border-line hover:bg-bg-hover hover:text-text-primary;
+  }
+  .btn-danger {
+    @apply btn bg-down text-white hover:opacity-90;
+  }
+
+  /* Tab bar (TradingView style) */
+  .tab {
+    @apply relative py-1 px-4 text-[12px] text-text-secondary cursor-pointer
+      transition-colors duration-100 hover:text-text-primary select-none;
+  }
+  .tab-active {
+    @apply text-text-primary;
+  }
+  .tab-active::after {
+    content: "";
+    @apply absolute bottom-0 left-0 right-0 h-[2px] bg-accent;
+  }
+
+  /* Status dots */
+  .dot {
+    @apply inline-block w-1.5 h-1.5 rounded-full mr-1.5;
+  }
+
+  /* Signal badge */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium;
+  }
+
+  /* Markdown report content */
+  .prose-report {
+    @apply text-text-primary text-[12.5px] leading-relaxed;
+  }
+  .prose-report h1,
+  .prose-report h2,
+  .prose-report h3,
+  .prose-report h4 {
+    @apply text-text-primary font-semibold mt-5 mb-2 first:mt-0;
+  }
+  .prose-report h1 {
+    @apply text-[20px] border-b border-line pb-2;
+  }
+  .prose-report h2 {
+    @apply text-[16px];
+  }
+  .prose-report h3 {
+    @apply text-[14px];
+  }
+  .prose-report h4 {
+    @apply text-[13px];
+  }
+  .prose-report p {
+    @apply my-2;
+  }
+  .prose-report ul {
+    @apply list-disc pl-5 my-2 space-y-0.5;
+  }
+  .prose-report ol {
+    @apply list-decimal pl-5 my-2 space-y-0.5;
+  }
+  .prose-report li {
+    @apply my-0.5;
+  }
+  .prose-report blockquote {
+    @apply border-l-[3px] border-accent/60 pl-3 my-2 text-text-secondary italic;
+  }
+  .prose-report code {
+    @apply font-mono text-[11px] bg-bg-surface text-accent px-1 py-0.5 rounded;
+  }
+  .prose-report pre {
+    @apply bg-bg-surface border border-line rounded p-3 my-3 overflow-x-auto;
+  }
+  .prose-report pre code {
+    @apply bg-transparent text-text-primary p-0;
+  }
+  .prose-report a {
+    @apply text-accent underline hover:text-accent-hover;
+  }
+  .prose-report hr {
+    @apply border-line my-4;
+  }
+  .prose-report table {
+    @apply w-full border-collapse my-3 text-[12px];
+  }
+  .prose-report th {
+    @apply bg-bg-surface text-text-primary font-medium text-left px-2 py-1 border border-line;
+  }
+  .prose-report td {
+    @apply px-2 py-1 border border-line text-text-secondary;
+  }
+  .prose-report strong {
+    @apply font-semibold text-text-primary;
+  }
+}
