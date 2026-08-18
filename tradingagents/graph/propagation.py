@@ -8,6 +8,40 @@ from tradingagents.agents.utils.agent_states import (
 )
 from tradingagents.markets.detector import detect_market_type
 
+# Superstep budgets per graph stage. LangGraph's recursion_limit counts one
+# step per node execution, so the limit must scale with graph size: an
+# analyst's agent->tools->agent loop consumes 2 steps per tool round, and
+# A-share runs carry 7 analysts (vs 4 for US), which exhausted the old
+# hardcoded 100 mid-run (#astock-recursion).
+_ANALYST_STEPS = 16  # agent + ~6 tool-loop rounds + clear node + slack
+_DEBATE_STEPS_PER_ROUND = 2  # Bull/Bear alternate per round
+_RISK_STEPS_PER_ROUND = 3  # aggressive/conservative/neutral per round
+_FIXED_STEPS = 8  # Research Manager, Trader, Portfolio Manager, slack
+
+
+def compute_recursion_limit(
+    n_analysts: int,
+    debate_rounds: int,
+    risk_rounds: int,
+    *,
+    min_limit: int = 100,
+) -> int:
+    """Derive a LangGraph recursion limit from the graph's shape.
+
+    The limit only acts as a runaway-loop fuse, so it errs on the generous
+    side: the historical floor of 100 is kept for small graphs, and larger
+    analyst teams / deeper debates raise it proportionally.
+    """
+    budget = (
+        n_analysts * _ANALYST_STEPS
+        + debate_rounds * _DEBATE_STEPS_PER_ROUND
+        + 2  # debate judge
+        + risk_rounds * _RISK_STEPS_PER_ROUND
+        + 2  # portfolio entry
+        + _FIXED_STEPS
+    )
+    return max(min_limit, budget)
+
 
 class Propagator:
     """Handles state initialization and propagation through the graph."""

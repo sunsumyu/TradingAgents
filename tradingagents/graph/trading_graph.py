@@ -132,8 +132,20 @@ class TradingAgentsGraph:
             self.conditional_logic,
         )
 
+        # Scale the recursion fuse with graph size: A-share runs carry 7
+        # analysts and exhausted the old hardcoded 100 (#astock-recursion).
+        # An explicit larger user setting always wins.
+        from tradingagents.graph.propagation import compute_recursion_limit
+
+        computed_limit = compute_recursion_limit(
+            n_analysts=len(selected_analysts),
+            debate_rounds=self.config["max_debate_rounds"],
+            risk_rounds=self.config["max_risk_discuss_rounds"],
+        )
         self.propagator = Propagator(
-            max_recur_limit=self.config.get("max_recur_limit", 100),
+            max_recur_limit=max(
+                self.config.get("max_recur_limit", 100), computed_limit
+            ),
         )
         self.reflector = Reflector(self.quick_thinking_llm)
         self.signal_processor = SignalProcessor(self.quick_thinking_llm)
