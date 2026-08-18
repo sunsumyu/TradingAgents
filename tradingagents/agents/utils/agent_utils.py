@@ -120,7 +120,7 @@ def resolve_instrument_identity(ticker: str) -> dict:
     # them and returns nothing usable. Skip the pointless round-trip so A-share
     # runs don't spam "Quote not found for symbol: 600519"-style errors and
     # fall back to ticker-only context instead.
-    if detect_market_type(ticker) == "astock":
+    if detect_market_type(ticker, fix_astock=True) == "astock":
         logger.debug("Skipping Yahoo identity lookup for A-share ticker %s", ticker)
         return {}
 

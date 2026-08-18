@@ -97,7 +97,7 @@ def detect_asset_type(ticker: str) -> AssetType:
     from tradingagents.markets.detector import detect_market_type
 
     canonical = normalize_ticker_symbol(ticker)
-    market = detect_market_type(canonical)
+    market = detect_market_type(canonical, fix_astock=True)
     return _MARKET_TYPE_MAP.get(market, AssetType.STOCK)
 
 

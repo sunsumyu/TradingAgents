@@ -163,7 +163,14 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     # hit it. Route them to the A-share loader (mootdx / eastmoney / sina),
     # which returns the same Date/Open/High/Low/Close/Volume shape filtered to
     # curr_date (#astock).
-    from tradingagents.markets.detector import detect_market_type
+    from tradingagents.markets.detector import detect_market_type, _try_fix_astock_ticker
+
+    # Near-miss A-share tickers (e.g. "60073X" -> "600733") must be corrected
+    # BEFORE market type detection, otherwise they're classified as US and
+    # routed to Yahoo Finance which has no A-share data.
+    _fixed = _try_fix_astock_ticker(symbol)
+    if _fixed:
+        symbol = _fixed
 
     if detect_market_type(symbol) == "astock":
         from tradingagents.dataflows.a_stock import _load_ohlcv_astock

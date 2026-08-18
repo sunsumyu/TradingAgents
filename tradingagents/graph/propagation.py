@@ -92,7 +92,7 @@ class Propagator:
         other value is returned unchanged so explicit overrides always win.
         """
         if market_type == "auto":
-            return detect_market_type(ticker)
+            return detect_market_type(ticker, fix_astock=True)
         return market_type
 
     def apply_astock_config_overrides(self, config: dict) -> None:
