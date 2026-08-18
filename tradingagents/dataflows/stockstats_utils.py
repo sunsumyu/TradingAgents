@@ -158,6 +158,18 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
     canonical = normalize_symbol(symbol)
     safe_symbol = safe_ticker_component(canonical)
 
+    # A-share tickers have no Yahoo presence — yfinance 404s on 6-digit codes
+    # and returns nothing usable, so the verified-market-snapshot path must not
+    # hit it. Route them to the A-share loader (mootdx / eastmoney / sina),
+    # which returns the same Date/Open/High/Low/Close/Volume shape filtered to
+    # curr_date (#astock).
+    from tradingagents.markets.detector import detect_market_type
+
+    if detect_market_type(symbol) == "astock":
+        from tradingagents.dataflows.a_stock import _load_ohlcv_astock
+
+        return _load_ohlcv_astock(symbol, curr_date)
+
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date)
 
