@@ -471,10 +471,20 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
         task.add_event("analysts", "System", "in_progress", "Graph initialized, starting streaming")
 
         # Resolve market type: use explicit override or auto-detect
-        from tradingagents.markets.detector import detect_market_type
+        from tradingagents.markets.detector import detect_market_type, _try_fix_astock_ticker
 
-        market_type = request.market_type or detect_market_type(request.ticker)
-        logger.info("Detected market_type: %s for ticker %s", market_type, request.ticker)
+        # Try to detect with near-miss fix enabled (e.g. "60073X" -> "600733")
+        market_type = request.market_type or detect_market_type(request.ticker, fix_astock=True)
+
+        # If near-miss detected as astock, compute corrected ticker
+        _corrected_ticker = request.ticker
+        if market_type == "astock":
+            fixed = _try_fix_astock_ticker(request.ticker)
+            if fixed:
+                _corrected_ticker = fixed
+
+        logger.info("Detected market_type: %s for ticker %s (corrected: %s)",
+                     market_type, request.ticker, _corrected_ticker)
 
         # Apply A-share overrides: switch vendors and add A-share analysts
         if market_type == "astock":
@@ -505,6 +515,12 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
 
         # Inject market_type into state
         config["market_type"] = market_type
+
+        # If market_type was auto-detected as astock from a near-miss ticker
+        # (e.g. "60073X" -> "600733"), use the corrected ticker for data lookups
+        if market_type == "astock" and request.ticker != _corrected_ticker:
+            logger.info("A-share ticker corrected: %s -> %s", request.ticker, _corrected_ticker)
+            request.ticker = _corrected_ticker
 
         # Initialize state
         instrument_context = graph.resolve_instrument_context(request.ticker, market_type)
