@@ -1,0 +1,393 @@
+"""Parsing utilities and assembly logic for chart visualization data."""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any
+
+from .schemas import (
+    BollingerData,
+    ChartData,
+    DashboardData,
+    FundFlowData,
+    KlineData,
+    MacdData,
+    RsiData,
+)
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# CSV parsing
+# ---------------------------------------------------------------------------
+
+_OHLCV_HEADER_RE = re.compile(r"^Date,Open,High,Low,Close")
+
+
+def parse_ohlcv_csv(csv_text: str) -> list[dict[str, Any]]:
+    """Parse the CSV output of ``get_YFin_data_online`` into structured records.
+
+    Skips comment lines (``# ...``) and the header row.  Returns a list of
+    dicts with keys: ``date, open, high, low, close, adj_close, volume``.
+    """
+    records: list[dict[str, Any]] = []
+    header_found = False
+
+    for line in csv_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        # Skip comment lines
+        if line.startswith("#"):
+            # Detect the CSV header row embedded in comments context
+            continue
+
+        # Detect the actual CSV header
+        if _OHLCV_HEADER_RE.match(line):
+            header_found = True
+            continue
+
+        if not header_found:
+            continue
+
+        # Parse data row: Date,Open,High,Low,Close,Adj Close,Volume
+        parts = line.split(",")
+        if len(parts) < 7:
+            continue
+
+        try:
+            records.append(
+                {
+                    "date": parts[0],
+                    "open": float(parts[1]),
+                    "high": float(parts[2]),
+                    "low": float(parts[3]),
+                    "close": float(parts[4]),
+                    "adj_close": float(parts[5]),
+                    "volume": float(parts[6]),
+                }
+            )
+        except (ValueError, IndexError):
+            # Skip malformed rows
+            continue
+
+    return records
+
+
+# ---------------------------------------------------------------------------
+# Indicator text parsing
+# ---------------------------------------------------------------------------
+
+_DATE_VALUE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}):\s*(.+)$")
+
+
+def parse_indicator_text(text: str) -> dict[str, list[Any]]:
+    """Parse the formatted output of ``get_stock_stats_indicators_window``.
+
+    Returns ``{"dates": [...], "values": [...]}`` with N/A entries excluded.
+    Numeric values are converted to ``float``; non-numeric strings are skipped.
+    """
+    dates: list[str] = []
+    values: list[float] = []
+
+    for line in text.splitlines():
+        m = _DATE_VALUE_RE.match(line.strip())
+        if not m:
+            continue
+
+        date_str, raw_value = m.group(1), m.group(2).strip()
+
+        # Skip N/A entries
+        if raw_value.startswith("N/A") or raw_value == "":
+            continue
+
+        try:
+            values.append(float(raw_value))
+            dates.append(date_str)
+        except ValueError:
+            # Non-numeric value (e.g. description text leaked in) — skip
+            continue
+
+    return {"dates": dates, "values": values}
+
+
+# ---------------------------------------------------------------------------
+# Convenience: parse multiple indicators at once
+# ---------------------------------------------------------------------------
+
+
+def parse_indicator_bundle(
+    indicators: dict[str, str],
+) -> dict[str, dict[str, list[Any]]]:
+    """Parse a bundle of indicator texts keyed by indicator name.
+
+    Returns ``{indicator_name: {"dates": [...], "values": [...]}, ...}``.
+    """
+    return {name: parse_indicator_text(text) for name, text in indicators.items()}
+
+
+# ---------------------------------------------------------------------------
+# Signal extraction from markdown
+# ---------------------------------------------------------------------------
+
+_RATING_RE = re.compile(r"\*\*Rating\*\*:\s*(\w+)", re.IGNORECASE)
+_SENTIMENT_SCORE_RE = re.compile(r"Score:\s*(\d+(?:\.\d+)?)\s*/\s*10")
+_SENTIMENT_CONFIDENCE_RE = re.compile(r"Confidence:?\*{0,2}:\s*\*{0,2}\s*(low|medium|high)", re.IGNORECASE)
+
+# Dimension keywords for scoring from analyst reports
+_TECHNICAL_KEYWORDS = re.compile(r"(RSI|MACD|SMA|EMA|Bollinger|KDJ|ATR|trend|momentum)", re.IGNORECASE)
+_SENTIMENT_KEYWORDS = re.compile(r"(sentiment|bullish|bearish|social|reddit|stocktwits)", re.IGNORECASE)
+_NEWS_KEYWORDS = re.compile(r"(news|headline|announcement|regulatory|macro)", re.IGNORECASE)
+_FUNDAMENTALS_KEYWORDS = re.compile(r"(revenue|earnings|P/E|ROE|balance sheet|cash flow|fundamental)", re.IGNORECASE)
+
+
+def _extract_signal_from_decision(final_trade_decision: str) -> str:
+    """Extract the rating string from the final trade decision markdown."""
+    m = _RATING_RE.search(final_trade_decision)
+    if m:
+        rating = m.group(1).capitalize()
+        valid = {"Buy", "Overweight", "Hold", "Underweight", "Sell"}
+        return rating if rating in valid else "Hold"
+    return "Hold"
+
+
+def _compute_dimension_scores(
+    sections: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Compute dimension scores by counting relevant keywords in each analyst report."""
+    dimensions = [
+        ("Technical", _TECHNICAL_KEYWORDS, "market_report"),
+        ("Sentiment", _SENTIMENT_KEYWORDS, "sentiment_report"),
+        ("News", _NEWS_KEYWORDS, "news_report"),
+        ("Fundamentals", _FUNDAMENTALS_KEYWORDS, "fundamentals_report"),
+    ]
+    scores = []
+    for name, pattern, report_key in dimensions:
+        text = sections.get(report_key, "")
+        matches = pattern.findall(text)
+        # Normalize: count matches, cap at 10, scale to 0-10
+        raw = min(len(matches), 10)
+        score = round(raw * 10 / 10, 1) if raw > 0 else 5.0  # default 5 if no mentions
+        scores.append({"name": name, "value": score, "max": 10})
+    return scores
+
+
+# ---------------------------------------------------------------------------
+# Data fetching (re-fetches from vendor APIs)
+# ---------------------------------------------------------------------------
+
+def _fetch_ohlcv(
+    symbol: str, start_date: str, end_date: str
+) -> str | None:
+    """Fetch OHLCV CSV via the vendor routing layer."""
+    try:
+        from tradingagents.dataflows.interface import route_to_vendor
+        return route_to_vendor("get_stock_data", symbol, start_date, end_date)
+    except Exception as exc:
+        logger.warning("Failed to fetch OHLCV for %s: %s", symbol, exc)
+        return None
+
+
+def _fetch_indicator(
+    symbol: str, indicator: str, curr_date: str, look_back_days: int = 30
+) -> str | None:
+    """Fetch a single technical indicator via the vendor routing layer."""
+    try:
+        from tradingagents.dataflows.interface import route_to_vendor
+        return route_to_vendor("get_indicators", symbol, indicator, curr_date, look_back_days)
+    except Exception as exc:
+        logger.warning("Failed to fetch indicator %s for %s: %s", indicator, symbol, exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Main assembly function
+# ---------------------------------------------------------------------------
+
+# Indicators to fetch for each chart
+_KLINE_MA_INDICATORS = ["close_50_sma"]  # Used for MA50 overlay (MA5/10/20 computed from OHLCV)
+_MACD_INDICATORS = ["macd", "macds", "macdh"]
+_RSI_INDICATORS = ["rsi"]
+_BOLLINGER_INDICATORS = ["boll", "boll_ub", "boll_lb"]
+
+
+def _compute_ma(closes: list[float], period: int) -> list[float | None]:
+    """Compute a simple moving average over close prices.
+
+    Returns a list of the same length as ``closes``, with ``None`` for
+    positions where not enough data is available.
+    """
+    result: list[float | None] = []
+    for i in range(len(closes)):
+        if i < period - 1:
+            result.append(None)
+        else:
+            window = closes[i - period + 1 : i + 1]
+            result.append(round(sum(window) / period, 2))
+    return result
+
+
+def build_chart_data(
+    final_state: dict[str, Any],
+    ticker: str,
+    date: str,
+    market_type: str = "us",
+) -> ChartData | None:
+    """Build chart visualization data from the completed analysis state.
+
+    Re-fetches OHLCV and indicator data from vendor APIs, then assembles
+    a ``ChartData`` model.  Returns ``None`` if data fetching fails.
+
+    Parameters
+    ----------
+    final_state:
+        The merged LangGraph state dict after analysis completes.
+    ticker:
+        The stock ticker symbol.
+    date:
+        The analysis date in YYYY-MM-DD format.
+    market_type:
+        Market type (``"us"``, ``"astock"``, ``"hk"``, ``"crypto"``).
+    """
+    from datetime import datetime, timedelta
+
+    # Determine date range for K-line data (60 days for MA50)
+    try:
+        curr_dt = datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        logger.warning("Invalid date format: %s", date)
+        return None
+
+    start_dt = curr_dt - timedelta(days=90)  # ~60 trading days
+    start_date = start_dt.strftime("%Y-%m-%d")
+
+    # --- K-line data ---
+    kline = None
+    ohlcv_text = _fetch_ohlcv(ticker, start_date, date)
+    if ohlcv_text:
+        records = parse_ohlcv_csv(ohlcv_text)
+        if records:
+            dates = [r["date"] for r in records]
+            ohlc = [(r["open"], r["close"], r["low"], r["high"]) for r in records]
+            volumes = [r["volume"] for r in records]
+            closes = [r["close"] for r in records]
+
+            # Compute moving averages from close prices
+            ma5 = _compute_ma(closes, 5)
+            ma10 = _compute_ma(closes, 10)
+            ma20 = _compute_ma(closes, 20)
+            ma50 = _compute_ma(closes, 50)
+
+            kline = KlineData(
+                dates=dates,
+                ohlc=ohlc,
+                volumes=volumes,
+                ma5=ma5,
+                ma10=ma10,
+                ma20=ma20,
+                ma50=ma50,
+            )
+
+    # --- MACD data ---
+    macd = None
+    macd_texts = {}
+    for ind in _MACD_INDICATORS:
+        text = _fetch_indicator(ticker, ind, date)
+        if text:
+            macd_texts[ind] = text
+    if len(macd_texts) == 3:
+        parsed = parse_indicator_bundle(macd_texts)
+        # Align by date intersection
+        macd_dates = parsed["macd"]["dates"]
+        macd_values = parsed["macd"]["values"]
+        signal_values = parsed["macds"]["values"]
+        histogram_values = parsed["macdh"]["values"]
+        min_len = min(len(macd_values), len(signal_values), len(histogram_values))
+        if min_len > 0:
+            macd = MacdData(
+                dates=macd_dates[:min_len],
+                macd=macd_values[:min_len],
+                signal=signal_values[:min_len],
+                histogram=histogram_values[:min_len],
+            )
+
+    # --- RSI data ---
+    rsi = None
+    rsi_text = _fetch_indicator(ticker, "rsi", date)
+    if rsi_text:
+        parsed = parse_indicator_text(rsi_text)
+        if parsed["values"]:
+            rsi = RsiData(dates=parsed["dates"], values=parsed["values"])
+
+    # --- Bollinger Bands data ---
+    bollinger = None
+    boll_texts = {}
+    for ind in _BOLLINGER_INDICATORS:
+        text = _fetch_indicator(ticker, ind, date)
+        if text:
+            boll_texts[ind] = text
+    if len(boll_texts) == 3 and kline:
+        parsed = parse_indicator_bundle(boll_texts)
+        boll_dates = parsed["boll"]["dates"]
+        middle = parsed["boll"]["values"]
+        upper = parsed["boll_ub"]["values"]
+        lower = parsed["boll_lb"]["values"]
+        min_len = min(len(upper), len(middle), len(lower))
+        if min_len > 0:
+            # Align close prices with bollinger dates
+            kline_date_map = {d: i for i, d in enumerate(kline.dates)}
+            close_aligned = [
+                kline.ohlc[kline_date_map[d]][1]  # close is index 1
+                for d in boll_dates[:min_len]
+                if d in kline_date_map
+            ]
+            bollinger = BollingerData(
+                dates=boll_dates[:min_len],
+                upper=upper[:min_len],
+                middle=middle[:min_len],
+                lower=lower[:min_len],
+                close=close_aligned[:min_len],
+            )
+
+    # --- Dashboard data ---
+    dashboard = None
+    final_decision = final_state.get("final_trade_decision", "")
+    signal = _extract_signal_from_decision(final_decision)
+    sections = {}
+    for key in ("market_report", "sentiment_report", "news_report", "fundamentals_report"):
+        val = final_state.get(key)
+        if val:
+            sections[key] = val
+
+    # Try to extract confidence from sentiment report
+    confidence = 50.0  # default
+    sentiment_report = final_state.get("sentiment_report", "")
+    conf_match = _SENTIMENT_CONFIDENCE_RE.search(sentiment_report)
+    if conf_match:
+        conf_map = {"low": 30.0, "medium": 60.0, "high": 85.0}
+        confidence = conf_map.get(conf_match.group(1).lower(), 50.0)
+
+    scores = _compute_dimension_scores(sections) if sections else []
+    dashboard = DashboardData(
+        signal=signal,
+        confidence=confidence,
+        scores=scores,
+    )
+
+    # --- Assemble final ChartData ---
+    chart_data = ChartData(
+        kline=kline,
+        macd=macd,
+        rsi=rsi,
+        bollinger=bollinger,
+        dashboard=dashboard,
+    )
+
+    # Return None only if we got nothing useful
+    if kline is None and macd is None and rsi is None and bollinger is None:
+        logger.warning("No chart data could be assembled for %s", ticker)
+        return None
+
+    return chart_data

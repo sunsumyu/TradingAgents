@@ -42,6 +42,7 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.reporting import write_report_tree
 from tradingagents.api_callbacks import ProgressCallbackHandler
 
+from .chart_data import build_chart_data
 from .schemas import AnalyzeRequest, ProgressEvent, ReportResponse, StreamingTokenEvent
 
 logger = logging.getLogger(__name__)
@@ -735,12 +736,21 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
         report_path = graph.save_reports(final_state, request.ticker)
         report_md = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
 
+        # Build chart visualization data (re-fetches OHLCV/indicators)
+        chart = None
+        try:
+            market_type = final_state.get("market_type", "us")
+            chart = build_chart_data(final_state, request.ticker, request.date, market_type)
+        except Exception as exc:
+            logger.warning("Chart data assembly failed for %s: %s", request.ticker, exc)
+
         # Build the ReportResponse
         report = ReportResponse(
             ticker=request.ticker,
             signal=signal,
             report_md=report_md,
             sections=sections,
+            chart_data=chart,
         )
 
         task.set_completed(report, signal)
