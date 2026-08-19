@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import {
   DEFAULT_CONFIG,
+  latestTradingDate,
   loadConfig,
   saveConfig,
   type AnalysisConfig,
@@ -33,8 +34,8 @@ export default function App() {
       try {
         const result = await api.loadConfig();
         if (result.config) {
-          // Merge YAML config with defaults
-          const merged = { ...DEFAULT_CONFIG, ...result.config } as AnalysisConfig;
+          // Merge YAML config with defaults, always use today's date
+          const merged = { ...DEFAULT_CONFIG, ...result.config, date: latestTradingDate() } as AnalysisConfig;
           setConfig(merged);
           saveConfig(merged); // Also save to localStorage
         }
