@@ -53,6 +53,11 @@ class GoogleClient(BaseLLMClient):
         # Enable streaming so on_chat_model_stream callback fires per-token
         llm_kwargs.setdefault("streaming", True)
 
+        # Enable retries for transient network errors (chunked read failures,
+        # connection resets, etc.) which are common with LLM providers.
+        if "max_retries" not in llm_kwargs:
+            llm_kwargs["max_retries"] = 3
+
         return NormalizedChatGoogleGenerativeAI(**llm_kwargs)
 
     def validate_model(self) -> bool:

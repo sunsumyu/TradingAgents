@@ -333,6 +333,11 @@ class OpenAIClient(BaseLLMClient):
         if "request_timeout" not in llm_kwargs:
             llm_kwargs["request_timeout"] = 120
 
+        # Enable retries for transient network errors (chunked read failures,
+        # connection resets, etc.) which are common with Chinese LLM providers.
+        if "max_retries" not in llm_kwargs:
+            llm_kwargs["max_retries"] = 3
+
         # Enable streaming so on_chat_model_stream callback fires per-token
         llm_kwargs.setdefault("streaming", True)
 

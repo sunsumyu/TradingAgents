@@ -742,6 +742,10 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
             task.set_error(
                 f"API 认证失败: 请检查 API Key 是否正确。({exc})"
             )
+        elif "incomplete" in err_str or "chunked" in err_str or "remoteprotocol" in err_str:
+            task.set_error(
+                f"连接中断: LLM 服务在响应过程中断开连接，可能是请求过长或服务端超时，请稍后重试。({exc})"
+            )
         elif "connection" in err_str or "connect" in err_str or "timeout" in err_str:
             task.set_error(
                 f"连接失败: 无法连接到 LLM 服务。请检查 LLM 代理地址和网络。({exc})"

@@ -60,6 +60,10 @@ class AnthropicClient(BaseLLMClient):
     # when the upstream provider is unresponsive.
     _DEFAULT_TIMEOUT = 120
 
+    # Default number of retries for transient network errors (e.g. chunked
+    # read failures when the LLM server closes the connection prematurely).
+    _DEFAULT_MAX_RETRIES = 3
+
     def get_llm(self) -> Any:
         """Return configured ChatAnthropic instance."""
         self.warn_if_unknown_model()
@@ -78,6 +82,11 @@ class AnthropicClient(BaseLLMClient):
         # Ensure a timeout is always set to prevent indefinite hangs
         if "timeout" not in llm_kwargs:
             llm_kwargs["timeout"] = self._DEFAULT_TIMEOUT
+
+        # Enable retries for transient network errors (chunked read failures,
+        # connection resets, etc.) which are common with Chinese LLM providers.
+        if "max_retries" not in llm_kwargs:
+            llm_kwargs["max_retries"] = self._DEFAULT_MAX_RETRIES
 
         # Enable streaming so on_chat_model_stream callback fires per-token
         llm_kwargs.setdefault("streaming", True)
