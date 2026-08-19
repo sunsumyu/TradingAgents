@@ -619,38 +619,62 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
 
         try:
             logger.info("[stream] Starting graph.stream()")
-            for chunk in graph.graph.stream(init_state, **args):
-                logger.info("[stream] Received chunk #%d", len(trace) + 1)
-                # Abort if a fatal LLM error was reported by the callback handler
-                if progress_handler.has_fatal_error:
-                    logger.error("Fatal LLM error detected, aborting analysis")
+            # Retry transient network errors (e.g. GLM API closing connection
+            # mid-stream). These are safe to retry because the graph state
+            # is re-initialized each time.
+            import httpx as _httpx
+            _MAX_STREAM_RETRIES = 2
+            _RETRY_DELAY_SECONDS = 5
+            _stream_ok = False
+            for attempt in range(_MAX_STREAM_RETRIES + 1):
+                try:
+                    for chunk in graph.graph.stream(init_state, **args):
+                        logger.info("[stream] Received chunk #%d", len(trace) + 1)
+                        # Abort if a fatal LLM error was reported by the callback handler
+                        if progress_handler.has_fatal_error:
+                            logger.error("Fatal LLM error detected, aborting analysis")
+                            break
+
+                        # Safety: abort if analysis exceeds time limit
+                        if timeout_event.is_set():
+                            raise TimeoutError(
+                                f"Analysis exceeded {MAX_ANALYSIS_MINUTES} minute limit. "
+                                "Check LLM proxy URL and API key configuration."
+                            )
+
+                        _detect_progress(task, chunk, list(selected))
+                        # Detect newly completed analysts and emit in_progress for the next
+                        for analyst_key in selected:
+                            if analyst_key in completed_keys:
+                                continue
+                            agent_name = ANTHROPOLOGIST_NAMES.get(analyst_key, analyst_key)
+                            if _is_analyst_completed(task, agent_name):
+                                completed_keys.add(analyst_key)
+                                _emit_next_agent(task, list(selected),
+                                                 completed_agent_key=analyst_key)
+                        trace.append(chunk)
+                        last_event_ts[0] = datetime.now()
+
+                        # Log which keys are in the chunk for debugging stalls
+                        chunk_keys = [k for k in chunk.keys() if chunk[k]]
+                        if chunk_keys:
+                            logger.info("[stream] chunk keys: %s", chunk_keys)
+                    logger.info("[stream] graph.stream() finished, %d chunks total", len(trace))
+                    _stream_ok = True
                     break
-
-                # Safety: abort if analysis exceeds time limit
-                if timeout_event.is_set():
-                    raise TimeoutError(
-                        f"Analysis exceeded {MAX_ANALYSIS_MINUTES} minute limit. "
-                        "Check LLM proxy URL and API key configuration."
-                    )
-
-                _detect_progress(task, chunk, list(selected))
-                # Detect newly completed analysts and emit in_progress for the next
-                for analyst_key in selected:
-                    if analyst_key in completed_keys:
-                        continue
-                    agent_name = ANTHROPOLOGIST_NAMES.get(analyst_key, analyst_key)
-                    if _is_analyst_completed(task, agent_name):
-                        completed_keys.add(analyst_key)
-                        _emit_next_agent(task, list(selected),
-                                         completed_agent_key=analyst_key)
-                trace.append(chunk)
-                last_event_ts[0] = datetime.now()
-
-                # Log which keys are in the chunk for debugging stalls
-                chunk_keys = [k for k in chunk.keys() if chunk[k]]
-                if chunk_keys:
-                    logger.info("[stream] chunk keys: %s", chunk_keys)
-            logger.info("[stream] graph.stream() finished, %d chunks total", len(trace))
+                except (_httpx.RemoteProtocolError, _httpx.RemoteDisconnect,
+                        ConnectionError, OSError) as exc:
+                    if attempt < _MAX_STREAM_RETRIES:
+                        logger.warning("Transient network error (attempt %d/%d): %s — retrying in %ds",
+                                       attempt + 1, _MAX_STREAM_RETRIES + 1, exc, _RETRY_DELAY_SECONDS)
+                        task.add_event("system", "System", "in_progress",
+                                       f"⚠️ 连接中断，{attempt + 1}/{_MAX_STREAM_RETRIES + 1} 次重试中… ({exc})")
+                        time.sleep(_RETRY_DELAY_SECONDS)
+                        # Reset state for retry
+                        trace.clear()
+                        completed_keys.clear()
+                    else:
+                        raise
         finally:
             # Signal the timeout monitor to stop
             timeout_event.set()
