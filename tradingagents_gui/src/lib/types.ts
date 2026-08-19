@@ -238,7 +238,8 @@ export function loadConfig(): AnalysisConfig {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return DEFAULT_CONFIG;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_CONFIG, ...parsed };
+    // Always use today's date, ignore any stored date
+    return { ...DEFAULT_CONFIG, ...parsed, date: latestTradingDate() };
   } catch {
     return DEFAULT_CONFIG;
   }
