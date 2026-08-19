@@ -14,6 +14,29 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
+# ── Analysis timeout scaling ────────────────────────────────────────────────
+# The old hardcoded 30-min limit was sized for the 4-analyst US graph.  A-share
+# runs carry 7 analysts; with rate-limit retries each analyst can burn 5-8 min,
+# so the budget must scale with graph size.
+_MIN_TIMEOUT_MINUTES = 30  # historical floor for small graphs
+
+
+def compute_analysis_timeout_minutes(
+    n_analysts: int,
+    debate_rounds: int,
+    risk_rounds: int,
+) -> int:
+    """Derive an analysis timeout from graph size.
+
+    Each analyst averages ~5 min in steady state (tool calls + LLM round-trips).
+    Debates add ~2 min per round.  A safety margin covers rate-limit retries
+    and slow vendor responses.
+    """
+    analyst_minutes = n_analysts * 6  # 6 min per analyst (conservative)
+    debate_minutes = (debate_rounds + risk_rounds) * 2
+    safety = 5
+    return max(_MIN_TIMEOUT_MINUTES, analyst_minutes + debate_minutes + safety)
+
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.reporting import write_report_tree
@@ -537,7 +560,13 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
         trace = []
         last_event_ts = [datetime.now()]  # mutable container for heartbeat thread
         analysis_start = datetime.now()  # defined BEFORE heartbeat starts
-        MAX_ANALYSIS_MINUTES = 30  # safety timeout
+        MAX_ANALYSIS_MINUTES = compute_analysis_timeout_minutes(
+            n_analysts=len(selected),
+            debate_rounds=config.get("max_debate_rounds", 3),
+            risk_rounds=config.get("max_risk_discuss_rounds", 3),
+        )
+        logger.info("Analysis timeout set to %d minutes (for %d analysts)",
+                     MAX_ANALYSIS_MINUTES, len(selected))
 
         # Heartbeat thread: emits a "still waiting" event every 15s if no
         # new progress has appeared, so the GUI shows the LLM is thinking.
