@@ -210,6 +210,62 @@ def _fetch_indicator(
 _MACD_INDICATORS = ["macd", "macds", "macdh"]
 _BOLLINGER_INDICATORS = ["boll", "boll_ub", "boll_lb"]
 
+_FUND_FLOW_ROW_RE = re.compile(
+    r"^\s*\d{4}-\d{2}-\d{2}\s*\|?\s*main=([-\d.]+)\s*\|?\s*large=([-\d.]+)"
+    r"\s*\|?\s*mid=([-\d.]+)\s*\|?\s*small=([-\d.]+)"
+)
+_NORTHBOUND_ROW_RE = re.compile(
+    r"^\s*(\d{4}-\d{2}-\d{2}):\s*HGT=([-\d.]+)\s*SGT=([-\d.]+)"
+)
+
+
+def _is_astock_ticker(ticker: str) -> bool:
+    """Return True if the ticker looks like a 6-digit A-share code."""
+    code = ticker.strip().split(".")[0]
+    return code.isdigit() and len(code) == 6
+
+
+def _parse_fund_flow_text(text: str) -> dict[str, list[Any]]:
+    """Parse the historical daily fund flow table from get_fund_flow.
+
+    Returns ``{"dates": [...], "mainForce": [...], "retail": [...]}``
+    where retail = small + mid (散户净流入).
+    """
+    dates: list[str] = []
+    main_force: list[float] = []
+    retail: list[float] = []
+
+    for line in text.splitlines():
+        m = _FUND_FLOW_ROW_RE.match(line)
+        if m:
+            dates.append(m.group(0).split("|")[0].strip().split()[0]
+                         if "|" in line else m.group(0).strip().split()[0])
+            # Extract date more robustly
+            date_match = re.match(r"\s*(\d{4}-\d{2}-\d{2})", line)
+            if date_match:
+                dates[-1] = date_match.group(1)
+            main_force.append(float(m.group(1)))
+            retail.append(float(m.group(3)) + float(m.group(4)))  # mid + small
+
+    return {"dates": dates, "mainForce": main_force, "retail": retail}
+
+
+def _parse_northbound_text(text: str) -> dict[str, list[Any]]:
+    """Parse the historical daily northbound flow from get_northbound_flow.
+
+    Returns ``{"dates": [...], "values": [...]}`` in 亿元.
+    """
+    dates: list[str] = []
+    values: list[float] = []
+
+    for line in text.splitlines():
+        m = _NORTHBOUND_ROW_RE.match(line)
+        if m:
+            dates.append(m.group(1))
+            values.append(float(m.group(2)) + float(m.group(3)))  # HGT + SGT
+
+    return {"dates": dates, "values": values}
+
 
 def _compute_ma(closes: list[float], period: int) -> list[float | None]:
     """Compute a simple moving average over close prices.
@@ -370,6 +426,40 @@ def build_chart_data(
         scores=scores,
     )
 
+    # --- Fund Flow data (A-share only) ---
+    fund_flow = None
+    if _is_astock_ticker(ticker):
+        try:
+            from tradingagents.dataflows.interface import route_to_vendor
+
+            # Per-stock main force + retail flow
+            ff_text = route_to_vendor("get_fund_flow", ticker, date, True)
+            ff_parsed = _parse_fund_flow_text(ff_text) if ff_text else {}
+
+            # Market-wide northbound flow
+            nb_text = route_to_vendor("get_northbound_flow", date, True)
+            nb_parsed = _parse_northbound_text(nb_text) if nb_text else {}
+
+            # Merge by date intersection
+            if ff_parsed.get("dates"):
+                ff_map = dict(zip(ff_parsed["dates"], zip(
+                    ff_parsed["mainForce"], ff_parsed["retail"]
+                )))
+                nb_map = dict(zip(nb_parsed.get("dates", []),
+                                  nb_parsed.get("values", [])))
+                common = [d for d in ff_map if d in nb_map]
+                if not common:
+                    # Northbound may not align; use ff dates with 0 northbound
+                    common = ff_parsed["dates"]
+                fund_flow = FundFlowData(
+                    dates=common,
+                    northbound=[nb_map.get(d, 0.0) for d in common],
+                    mainForce=[ff_map[d][0] for d in common],
+                    retail=[ff_map[d][1] for d in common],
+                )
+        except Exception as exc:
+            logger.warning("Fund flow assembly failed for %s: %s", ticker, exc)
+
     # --- Assemble final ChartData ---
     chart_data = ChartData(
         kline=kline,
@@ -377,6 +467,7 @@ def build_chart_data(
         rsi=rsi,
         bollinger=bollinger,
         dashboard=dashboard,
+        fundFlow=fund_flow,
     )
 
     # Return None only if we got nothing useful

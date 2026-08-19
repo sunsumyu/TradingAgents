@@ -18,7 +18,8 @@ function buildChartScript(chartData: ChartData): { containers: string; initScrip
   if (chartData.dashboard) {
     containers.push('<div class="chart-card"><h3>信号仪表盘</h3><div id="chart-dashboard" style="height:220px"></div></div>');
     const sig = chartData.dashboard.signal;
-    const sigColor = sig === "Buy" || sig === "Overweight" ? "#089981"
+    const sigColor = sig === "Buy" ? "#089981"
+      : sig === "Overweight" ? "#FF6D00"
       : sig === "Sell" || sig === "Underweight" ? "#F23645" : "#787B86";
     const scores = chartData.dashboard.scores;
     const radarData = scores.length > 0
@@ -36,9 +37,9 @@ function buildChartScript(chartData: ChartData): { containers: string; initScrip
           axisLine: { lineStyle: { width: 14, color: [[1,'#2A2E39']] } },
           axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
           pointer: { show: false }, anchor: { show: false },
-          title: { show: true, offsetCenter: [0,'30%'], fontSize: 14, color: '#D1D4DC', fontWeight: 'bold' },
-          detail: { valueAnimation: true, offsetCenter: [0,'-5%'], fontSize: 28, fontWeight: 'bold', color: '${sigColor}', formatter: function(){return '${sig}'} },
-          data: [{ value: ${chartData.dashboard.confidence}, name: '${chartData.dashboard.confidence.toFixed(0)}% confidence' }]
+          title: { show: true, offsetCenter: [0,'38%'], fontSize: 16, color: '${sigColor}', fontWeight: 'bold' },
+          detail: { valueAnimation: true, offsetCenter: [0,'-5%'], fontSize: 32, fontWeight: 'bold', color: '#D1D4DC', formatter: function(v){return v.toFixed(0)+'%'} },
+          data: [{ value: ${chartData.dashboard.confidence}, name: '${sig}' }]
         }${scores.length > 0 ? `,
         { type: 'radar', center: ['72%','55%'], radius: '45%',
           data: ${JSON.stringify(radarData)},

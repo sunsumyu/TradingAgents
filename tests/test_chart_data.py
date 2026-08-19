@@ -7,6 +7,9 @@ from unittest.mock import patch
 import pytest
 
 from tradingagents_api.chart_data import (
+    _is_astock_ticker,
+    _parse_fund_flow_text,
+    _parse_northbound_text,
     build_chart_data,
     parse_indicator_bundle,
     parse_indicator_text,
@@ -479,3 +482,95 @@ class TestBuildChartData:
         # Technical should have high score (7 mentions, capped at 10 → 7.0)
         tech_score = next(s for s in chart.dashboard.scores if s.name == "Technical")
         assert tech_score.value == 7.0
+
+
+# ---------------------------------------------------------------------------
+# _is_astock_ticker
+# ---------------------------------------------------------------------------
+
+
+class TestIsAstockTicker:
+    def test_six_digit_code(self):
+        assert _is_astock_ticker("600519") is True
+
+    def test_six_digit_with_exchange(self):
+        assert _is_astock_ticker("SH600519") is False  # has letters
+
+    def test_us_ticker(self):
+        assert _is_astock_ticker("AAPL") is False
+
+    def test_four_digit_hk(self):
+        assert _is_astock_ticker("00700") is False
+
+    def test_with_dot_suffix(self):
+        assert _is_astock_ticker("600519.SH") is True  # splits on "."
+
+
+# ---------------------------------------------------------------------------
+# _parse_fund_flow_text
+# ---------------------------------------------------------------------------
+
+_SAMPLE_FUND_FLOW = (
+    "# Fund Flow for 600519 (A-stock)\n"
+    "# Source: 东财 push2 (Eastmoney)\n"
+    "\n"
+    "## Historical Daily Fund Flow (last 5 trading days)\n"
+    "Date | 主力净流入(万) | 大单(万) | 中单(万) | 小单(万) | 超大单(万)\n"
+    "  2026-08-13 | main=1500 | large=800 | mid=-200 | small=-300 | super=700\n"
+    "  2026-08-14 | main=-500 | large=-300 | mid=100 | small=200 | super=-200\n"
+    "  2026-08-15 | main=2000 | large=1200 | mid=-400 | small=-600 | super=800\n"
+    "  2026-08-18 | main=-1000 | large=-600 | mid=300 | small=400 | super=-400\n"
+    "  2026-08-19 | main=800 | large=500 | mid=-100 | small=-200 | super=300\n"
+)
+
+
+class TestParseFundFlowText:
+    def test_valid_text(self):
+        result = _parse_fund_flow_text(_SAMPLE_FUND_FLOW)
+        assert len(result["dates"]) == 5
+        assert result["dates"][0] == "2026-08-13"
+        assert result["dates"][-1] == "2026-08-19"
+        # mainForce = main column
+        assert result["mainForce"][0] == 1500.0
+        assert result["mainForce"][1] == -500.0
+        # retail = mid + small
+        assert result["retail"][0] == -500.0  # -200 + -300
+        assert result["retail"][1] == 300.0  # 100 + 200
+
+    def test_empty_text(self):
+        result = _parse_fund_flow_text("")
+        assert result["dates"] == []
+        assert result["mainForce"] == []
+        assert result["retail"] == []
+
+
+# ---------------------------------------------------------------------------
+# _parse_northbound_text
+# ---------------------------------------------------------------------------
+
+_SAMPLE_NORTHBOUND = (
+    "# Northbound Capital Flow (2026-08-19)\n"
+    "# Source: 同花顺 hsgtApi (沪深股通) + local cache\n"
+    "\n"
+    "## Historical Daily Close (local cache, 亿元)\n"
+    "Date       | HGT(沪股通) | SGT(深股通) | Total\n"
+    "  2026-08-13: HGT=12.50 SGT=8.30 Total=20.80\n"
+    "  2026-08-14: HGT=-5.20 SGT=-3.10 Total=-8.30\n"
+    "  2026-08-15: HGT=20.00 SGT=15.00 Total=35.00\n"
+)
+
+
+class TestParseNorthboundText:
+    def test_valid_text(self):
+        result = _parse_northbound_text(_SAMPLE_NORTHBOUND)
+        assert len(result["dates"]) == 3
+        assert result["dates"][0] == "2026-08-13"
+        # HGT + SGT
+        assert result["values"][0] == 20.80  # 12.50 + 8.30
+        assert result["values"][1] == -8.30  # -5.20 + -3.10
+        assert result["values"][2] == 35.00  # 20.00 + 15.00
+
+    def test_empty_text(self):
+        result = _parse_northbound_text("")
+        assert result["dates"] == []
+        assert result["values"] == []

@@ -245,13 +245,18 @@ function SaveDropdown({
   };
 
   const saveHtml = async () => {
-    // Fetch ECharts minified source for offline bundling
+    // Load ECharts: try build-time embed first, fall back to CDN
     let echartsJs = "";
     try {
-      const resp = await fetch("https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js");
-      if (resp.ok) echartsJs = await resp.text();
+      const { getEchartsMinJs } = await import("../lib/echarts-bundle");
+      echartsJs = await getEchartsMinJs();
     } catch {
-      // CDN unavailable — export without charts
+      try {
+        const resp = await fetch("https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js");
+        if (resp.ok) echartsJs = await resp.text();
+      } catch {
+        // Both unavailable — export without charts
+      }
     }
 
     const html = buildExportHtml(ticker, signal, reportMd, chartData ?? null, echartsJs);

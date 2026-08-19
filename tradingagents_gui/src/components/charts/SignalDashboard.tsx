@@ -14,9 +14,8 @@ export default function SignalDashboard({ data }: Props) {
     animationDuration: 1500,
     animationEasing: "cubicOut",
     tooltip: { show: false },
-    // Gauge for signal + confidence
     series: [
-      // Outer gauge ring
+      // Outer gauge ring — confidence counts up from 0
       {
         type: "gauge",
         center: ["30%", "55%"],
@@ -40,20 +39,20 @@ export default function SignalDashboard({ data }: Props) {
         anchor: { show: false },
         title: {
           show: true,
-          offsetCenter: [0, "30%"],
-          fontSize: 14,
-          color: "#D1D4DC",
+          offsetCenter: [0, "38%"],
+          fontSize: 16,
+          color: signalColor,
           fontWeight: "bold",
         },
         detail: {
           valueAnimation: true,
           offsetCenter: [0, "-5%"],
-          fontSize: 28,
+          fontSize: 32,
           fontWeight: "bold",
-          color: signalColor,
-          formatter: () => data.signal,
+          color: "#D1D4DC",
+          formatter: (value: number) => `${value.toFixed(0)}%`,
         },
-        data: [{ value: data.confidence, name: `${data.confidence.toFixed(0)}% confidence` }],
+        data: [{ value: data.confidence, name: data.signal }],
       },
       // Radar chart for dimension scores
       ...(data.scores.length > 0
@@ -88,10 +87,27 @@ export default function SignalDashboard({ data }: Props) {
   };
 
   return (
-    <ReactECharts
-      option={option}
-      style={{ height: 220, width: "100%" }}
-      notMerge
-    />
+    <div style={{ position: "relative" }}>
+      <ReactECharts
+        option={option}
+        style={{ height: 220, width: "100%" }}
+        notMerge
+      />
+      {/* Signal label overlay — always visible, no animation dependency */}
+      <div
+        style={{
+          position: "absolute",
+          left: "30%",
+          top: "78%",
+          transform: "translateX(-50%)",
+          fontSize: 13,
+          color: "#787B86",
+          textAlign: "center",
+          pointerEvents: "none",
+        }}
+      >
+        信心指数
+      </div>
+    </div>
   );
 }

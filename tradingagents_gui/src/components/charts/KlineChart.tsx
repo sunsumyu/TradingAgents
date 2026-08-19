@@ -1,3 +1,4 @@
+import { useState } from "react";
 import ReactECharts from "echarts-for-react";
 import type { KlineData } from "../../lib/types";
 import { CHART_COLORS } from "../../lib/echarts-theme";
@@ -6,7 +7,27 @@ interface Props {
   data: KlineData;
 }
 
+const MA_CONFIG: [string, keyof KlineData, string][] = [
+  ["MA5", "ma5", "#F7B731"],
+  ["MA10", "ma10", "#2962FF"],
+  ["MA20", "ma20", "#9B59B6"],
+  ["MA50", "ma50", "#26A69A"],
+];
+
 export default function KlineChart({ data }: Props) {
+  const [visibleMa, setVisibleMa] = useState<Set<string>>(
+    new Set(MA_CONFIG.map(([name]) => name))
+  );
+
+  const toggleMa = (name: string) => {
+    setVisibleMa((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
   const option = {
     animation: true,
     animationDuration: 800,
@@ -18,16 +39,27 @@ export default function KlineChart({ data }: Props) {
         if (!candle) return "";
         const [open, close, low, high] = candle.data;
         const vol = params.find((p: any) => p.seriesName === "Volume");
-        return [
+        const lines = [
           `<b>${candle.axisValue}</b>`,
           `Open: ${open}`,
           `High: ${high}`,
           `Low: ${low}`,
           `Close: ${close}`,
           vol ? `Volume: ${vol.data?.toLocaleString()}` : "",
-        ]
-          .filter(Boolean)
-          .join("<br/>");
+        ];
+        // Add MA values to tooltip
+        for (const [name, key, color] of MA_CONFIG) {
+          if (!visibleMa.has(name)) continue;
+          const values = data[key] as (number | null)[] | undefined;
+          if (values) {
+            const idx = candle.dataIndex;
+            const val = values[idx];
+            if (val != null) {
+              lines.push(`<span style="color:${color}">●</span> ${name}: ${val.toFixed(2)}`);
+            }
+          }
+        }
+        return lines.filter(Boolean).join("<br/>");
       },
     },
     axisPointer: { link: [{ xAxisIndex: "all" }] },
@@ -100,7 +132,7 @@ export default function KlineChart({ data }: Props) {
           borderColor0: CHART_COLORS.red,
         },
       },
-      ...buildMaSeries(data),
+      ...buildMaSeries(data, visibleMa),
       {
         name: "Volume",
         type: "bar",
@@ -121,28 +153,48 @@ export default function KlineChart({ data }: Props) {
   };
 
   return (
-    <ReactECharts
-      option={option}
-      style={{ height: 350, width: "100%" }}
-      notMerge
-    />
+    <div>
+      {/* MA toggle buttons */}
+      <div style={{ display: "flex", gap: 6, padding: "4px 16px", flexWrap: "wrap" }}>
+        {MA_CONFIG.map(([name, , color]) => (
+          <button
+            key={name}
+            onClick={() => toggleMa(name)}
+            style={{
+              padding: "2px 8px",
+              borderRadius: 4,
+              border: `1px solid ${visibleMa.has(name) ? color : "#363A45"}`,
+              background: visibleMa.has(name) ? `${color}22` : "transparent",
+              color: visibleMa.has(name) ? color : "#787B86",
+              fontSize: 11,
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+      <ReactECharts
+        option={option}
+        style={{ height: 350, width: "100%" }}
+        notMerge
+      />
+    </div>
   );
 }
 
-function buildMaSeries(data: KlineData) {
-  const maConfig: [string, (number | null)[] | undefined, string][] = [
-    ["MA5", data.ma5, "#F7B731"],
-    ["MA10", data.ma10, "#2962FF"],
-    ["MA20", data.ma20, "#9B59B6"],
-    ["MA50", data.ma50, "#26A69A"],
-  ];
-
-  return maConfig
-    .filter(([, values]) => values && values.length > 0)
-    .map(([name, values, color]) => ({
+function buildMaSeries(data: KlineData, visibleMa: Set<string>) {
+  return MA_CONFIG
+    .filter(([name]) => visibleMa.has(name))
+    .filter(([, key]) => {
+      const values = data[key] as (number | null)[] | undefined;
+      return values && values.length > 0;
+    })
+    .map(([name, key, color]) => ({
       name,
       type: "line" as const,
-      data: values,
+      data: data[key] as (number | null)[],
       smooth: true,
       lineStyle: { width: 1, color },
       symbol: "none",
