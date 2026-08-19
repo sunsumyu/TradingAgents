@@ -218,6 +218,9 @@ __marimo__/
 # Cache
 **/data_cache/
 
+# GUI source (the lib/ rule above is for Python build artifacts)
+!tradingagents_gui/src/lib/
+
 # Enterprise env file (secrets) and generated run reports
 .env.enterprise
 reports/

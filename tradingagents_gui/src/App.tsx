@@ -185,6 +185,7 @@ export default function App() {
           signal={report.signal}
           reportMd={report.report_md}
           sections={report.sections}
+          chartData={report.chart_data}
           onBack={() => setPhase("config")}
         />
       )}
