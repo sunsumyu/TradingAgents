@@ -208,7 +208,11 @@ export function latestTradingDate(): string {
   const day = d.getDay(); // 0=Sun, 6=Sat
   if (day === 0) d.setDate(d.getDate() - 2); // Sunday → Friday
   else if (day === 6) d.setDate(d.getDate() - 1); // Saturday → Friday
-  return d.toISOString().slice(0, 10);
+  // Use local timezone, not UTC (toISOString() would shift by timezone offset)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 export const DEFAULT_CONFIG: AnalysisConfig = {

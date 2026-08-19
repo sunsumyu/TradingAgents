@@ -224,7 +224,8 @@ function SaveDropdown({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [onClose]);
 
-  const defaultFilename = `${ticker}_analysis_${new Date().toISOString().slice(0, 10)}`;
+  const today = new Date();
+  const defaultFilename = `${ticker}_analysis_${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   const saveMarkdown = async () => {
     console.log("[DEBUG] saveMarkdown called, save function:", typeof save);
