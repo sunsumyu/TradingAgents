@@ -16,6 +16,7 @@ from tradingagents_api.schemas import (
     BollingerData,
     ChartData,
     DashboardData,
+    DimensionScore,
     FundFlowData,
     KlineData,
     MacdData,
@@ -476,5 +477,5 @@ class TestBuildChartData:
         assert chart is not None
         assert len(chart.dashboard.scores) == 4
         # Technical should have high score (7 mentions, capped at 10 → 7.0)
-        tech_score = next(s for s in chart.dashboard.scores if s["name"] == "Technical")
-        assert tech_score["value"] == 7.0
+        tech_score = next(s for s in chart.dashboard.scores if s.name == "Technical")
+        assert tech_score.value == 7.0

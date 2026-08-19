@@ -44,7 +44,7 @@ export const CHART_COLORS = {
 /** Signal → color mapping */
 export const SIGNAL_COLORS: Record<string, string> = {
   Buy: CHART_COLORS.green,
-  Overweight: "#26A69A",
+  Overweight: CHART_COLORS.orange,
   Hold: CHART_COLORS.gray,
   Underweight: "#EF5350",
   Sell: CHART_COLORS.red,

@@ -133,7 +133,6 @@ def parse_indicator_bundle(
 # ---------------------------------------------------------------------------
 
 _RATING_RE = re.compile(r"\*\*Rating\*\*:\s*(\w+)", re.IGNORECASE)
-_SENTIMENT_SCORE_RE = re.compile(r"Score:\s*(\d+(?:\.\d+)?)\s*/\s*10")
 _SENTIMENT_CONFIDENCE_RE = re.compile(r"Confidence:?\*{0,2}:\s*\*{0,2}\s*(low|medium|high)", re.IGNORECASE)
 
 # Dimension keywords for scoring from analyst reports
@@ -156,7 +155,11 @@ def _extract_signal_from_decision(final_trade_decision: str) -> str:
 def _compute_dimension_scores(
     sections: dict[str, str],
 ) -> list[dict[str, Any]]:
-    """Compute dimension scores by counting relevant keywords in each analyst report."""
+    """Compute dimension scores by counting relevant keywords in each analyst report.
+
+    Heuristic by design: richer keyword coverage maps to a higher score,
+    capped at 10.  Reports with no keyword matches get a neutral 5.
+    """
     dimensions = [
         ("Technical", _TECHNICAL_KEYWORDS, "market_report"),
         ("Sentiment", _SENTIMENT_KEYWORDS, "sentiment_report"),
@@ -167,9 +170,7 @@ def _compute_dimension_scores(
     for name, pattern, report_key in dimensions:
         text = sections.get(report_key, "")
         matches = pattern.findall(text)
-        # Normalize: count matches, cap at 10, scale to 0-10
-        raw = min(len(matches), 10)
-        score = round(raw * 10 / 10, 1) if raw > 0 else 5.0  # default 5 if no mentions
+        score = float(min(len(matches), 10)) if matches else 5.0
         scores.append({"name": name, "value": score, "max": 10})
     return scores
 
@@ -206,10 +207,7 @@ def _fetch_indicator(
 # Main assembly function
 # ---------------------------------------------------------------------------
 
-# Indicators to fetch for each chart
-_KLINE_MA_INDICATORS = ["close_50_sma"]  # Used for MA50 overlay (MA5/10/20 computed from OHLCV)
 _MACD_INDICATORS = ["macd", "macds", "macdh"]
-_RSI_INDICATORS = ["rsi"]
 _BOLLINGER_INDICATORS = ["boll", "boll_ub", "boll_lb"]
 
 
@@ -233,23 +231,21 @@ def build_chart_data(
     final_state: dict[str, Any],
     ticker: str,
     date: str,
-    market_type: str = "us",
 ) -> ChartData | None:
-    """Build chart visualization data from the completed analysis state.
+    """Build chart visualization data for a completed analysis.
 
     Re-fetches OHLCV and indicator data from vendor APIs, then assembles
-    a ``ChartData`` model.  Returns ``None`` if data fetching fails.
+    a ``ChartData`` model.  Returns ``None`` if no market data is available.
 
     Parameters
     ----------
     final_state:
-        The merged LangGraph state dict after analysis completes.
+        The merged LangGraph state dict after analysis completes (used for
+        the signal, confidence, and dimension scores).
     ticker:
         The stock ticker symbol.
     date:
         The analysis date in YYYY-MM-DD format.
-    market_type:
-        Market type (``"us"``, ``"astock"``, ``"hk"``, ``"crypto"``).
     """
     from datetime import datetime, timedelta
 
@@ -299,18 +295,20 @@ def build_chart_data(
             macd_texts[ind] = text
     if len(macd_texts) == 3:
         parsed = parse_indicator_bundle(macd_texts)
-        # Align by date intersection
-        macd_dates = parsed["macd"]["dates"]
-        macd_values = parsed["macd"]["values"]
-        signal_values = parsed["macds"]["values"]
-        histogram_values = parsed["macdh"]["values"]
-        min_len = min(len(macd_values), len(signal_values), len(histogram_values))
-        if min_len > 0:
+        # Align by date intersection - each indicator may have different
+        # N/A (non-trading day) gaps.
+        macd_map = dict(zip(parsed["macd"]["dates"], parsed["macd"]["values"]))
+        signal_map = dict(zip(parsed["macds"]["dates"], parsed["macds"]["values"]))
+        hist_map = dict(zip(parsed["macdh"]["dates"], parsed["macdh"]["values"]))
+        common_dates = [
+            d for d in macd_map if d in signal_map and d in hist_map
+        ]
+        if common_dates:
             macd = MacdData(
-                dates=macd_dates[:min_len],
-                macd=macd_values[:min_len],
-                signal=signal_values[:min_len],
-                histogram=histogram_values[:min_len],
+                dates=common_dates,
+                macd=[macd_map[d] for d in common_dates],
+                signal=[signal_map[d] for d in common_dates],
+                histogram=[hist_map[d] for d in common_dates],
             )
 
     # --- RSI data ---
@@ -330,25 +328,21 @@ def build_chart_data(
             boll_texts[ind] = text
     if len(boll_texts) == 3 and kline:
         parsed = parse_indicator_bundle(boll_texts)
-        boll_dates = parsed["boll"]["dates"]
-        middle = parsed["boll"]["values"]
-        upper = parsed["boll_ub"]["values"]
-        lower = parsed["boll_lb"]["values"]
-        min_len = min(len(upper), len(middle), len(lower))
-        if min_len > 0:
-            # Align close prices with bollinger dates
-            kline_date_map = {d: i for i, d in enumerate(kline.dates)}
-            close_aligned = [
-                kline.ohlc[kline_date_map[d]][1]  # close is index 1
-                for d in boll_dates[:min_len]
-                if d in kline_date_map
-            ]
+        boll_map = dict(zip(parsed["boll"]["dates"], parsed["boll"]["values"]))
+        ub_map = dict(zip(parsed["boll_ub"]["dates"], parsed["boll_ub"]["values"]))
+        lb_map = dict(zip(parsed["boll_lb"]["dates"], parsed["boll_lb"]["values"]))
+        # Only keep dates where all three bands AND a close price exist
+        kline_close_map = {d: o[1] for d, o in zip(kline.dates, kline.ohlc)}
+        common_dates = [
+            d for d in boll_map if d in ub_map and d in lb_map and d in kline_close_map
+        ]
+        if common_dates:
             bollinger = BollingerData(
-                dates=boll_dates[:min_len],
-                upper=upper[:min_len],
-                middle=middle[:min_len],
-                lower=lower[:min_len],
-                close=close_aligned[:min_len],
+                dates=common_dates,
+                upper=[ub_map[d] for d in common_dates],
+                middle=[boll_map[d] for d in common_dates],
+                lower=[lb_map[d] for d in common_dates],
+                close=[kline_close_map[d] for d in common_dates],
             )
 
     # --- Dashboard data ---

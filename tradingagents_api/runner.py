@@ -739,8 +739,7 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
         # Build chart visualization data (re-fetches OHLCV/indicators)
         chart = None
         try:
-            market_type = final_state.get("market_type", "us")
-            chart = build_chart_data(final_state, request.ticker, request.date, market_type)
+            chart = build_chart_data(final_state, request.ticker, request.date)
         except Exception as exc:
             logger.warning("Chart data assembly failed for %s: %s", request.ticker, exc)
 

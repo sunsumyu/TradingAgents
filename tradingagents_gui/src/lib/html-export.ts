@@ -127,6 +127,10 @@ function buildChartScript(chartData: ChartData): { containers: string; initScrip
   if (chartData.bollinger) {
     const b = chartData.bollinger;
     containers.push('<div class="chart-card"><h3>布林带</h3><div id="chart-boll" style="height:250px"></div></div>');
+    const bollMarkArea = b.dates.map((d, i) => [
+      { xAxis: d, yAxis: b.lower[i], itemStyle: { color: 'rgba(41,98,255,0.08)' } },
+      { xAxis: d, yAxis: b.upper[i] },
+    ]);
     inits.push(`
       echarts.init(document.getElementById('chart-boll')).setOption({
         animation: true, animationDuration: 800,
@@ -136,7 +140,8 @@ function buildChartScript(chartData: ChartData): { containers: string; initScrip
         xAxis: { type: 'category', data: ${JSON.stringify(b.dates)}, axisLine: { lineStyle: { color: '#363A45' } }, axisLabel: { color: '#787B86', fontSize: 10 } },
         yAxis: { scale: true, axisLine: { lineStyle: { color: '#363A45' } }, axisLabel: { color: '#787B86', fontSize: 10 }, splitLine: { lineStyle: { color: '#2A2E39' } } },
         series: [
-          { name: 'Upper', type: 'line', data: ${JSON.stringify(b.upper)}, lineStyle: { width: 1, color: '#F23645', type: 'dashed' }, symbol: 'none' },
+          { name: 'Upper', type: 'line', data: ${JSON.stringify(b.upper)}, lineStyle: { width: 1, color: '#F23645', type: 'dashed' }, symbol: 'none',
+            markArea: { silent: true, data: ${JSON.stringify(bollMarkArea)} } },
           { name: 'Middle', type: 'line', data: ${JSON.stringify(b.middle)}, lineStyle: { width: 1.5, color: '#2962FF' }, symbol: 'none' },
           { name: 'Lower', type: 'line', data: ${JSON.stringify(b.lower)}, lineStyle: { width: 1, color: '#089981', type: 'dashed' }, symbol: 'none' },
           { name: 'Close', type: 'line', data: ${JSON.stringify(b.close)}, lineStyle: { width: 2, color: '#D1D4DC' }, symbol: 'circle', symbolSize: 4, itemStyle: { color: '#D1D4DC' } }
@@ -265,7 +270,7 @@ export function buildExportHtml(
   <script>${echartsMinJs}</script>
   <script>
     var chartData = ${chartData ? JSON.stringify(chartData) : "null"};
-    if (chartData) {
+    if (chartData && typeof echarts !== 'undefined') {
       ${chartInitScript}
     }
   </script>

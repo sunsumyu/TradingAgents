@@ -14,10 +14,14 @@ export default function BollingerChart({ data }: Props) {
       trigger: "axis",
       formatter: (params: any[]) => {
         const lines = params.map((p: any) => {
-          const color = p.seriesName === "Upper" ? CHART_COLORS.red
-            : p.seriesName === "Lower" ? CHART_COLORS.green
-            : p.seriesName === "Close" ? "#D1D4DC"
-            : CHART_COLORS.blue;
+          const color =
+            p.seriesName === "Upper"
+              ? CHART_COLORS.red
+              : p.seriesName === "Lower"
+                ? CHART_COLORS.green
+                : p.seriesName === "Close"
+                  ? "#D1D4DC"
+                  : CHART_COLORS.blue;
           return `<span style="color:${color}">●</span> ${p.seriesName}: ${typeof p.value === "number" ? p.value.toFixed(2) : p.value}`;
         });
         return `<b>${params[0]?.axisValue}</b><br/>${lines.join("<br/>")}`;
@@ -48,6 +52,17 @@ export default function BollingerChart({ data }: Props) {
         data: data.upper,
         lineStyle: { width: 1, color: CHART_COLORS.red, type: "dashed" },
         symbol: "none",
+        markArea: {
+          silent: true,
+          data: data.dates.map((d, i) => [
+            {
+              xAxis: d,
+              yAxis: data.lower[i],
+              itemStyle: { color: "rgba(41,98,255,0.08)" },
+            },
+            { xAxis: d, yAxis: data.upper[i] },
+          ]),
+        },
       },
       {
         name: "Middle",
@@ -71,25 +86,6 @@ export default function BollingerChart({ data }: Props) {
         symbol: "circle",
         symbolSize: 4,
         itemStyle: { color: "#D1D4DC" },
-      },
-      // Band fill between upper and lower
-      {
-        name: "Band",
-        type: "line",
-        data: data.upper,
-        lineStyle: { width: 0, opacity: 0 },
-        symbol: "none",
-        stack: "band",
-        areaStyle: { color: "rgba(41,98,255,0.06)" },
-      },
-      {
-        name: "BandFill",
-        type: "line",
-        data: data.lower.map((v, i) => data.upper[i] - v),
-        lineStyle: { width: 0, opacity: 0 },
-        symbol: "none",
-        stack: "band",
-        areaStyle: { color: "rgba(41,98,255,0.06)" },
       },
     ],
   };

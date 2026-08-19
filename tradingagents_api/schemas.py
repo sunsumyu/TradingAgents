@@ -146,14 +146,22 @@ class BollingerData(BaseModel):
     close: list[float] = Field(description="Close prices for overlay")
 
 
+class DimensionScore(BaseModel):
+    """A single dimension score for the signal dashboard radar chart."""
+
+    name: str = Field(description="Dimension name (e.g. Technical, Sentiment)")
+    value: float = Field(description="Score value")
+    max: float = Field(description="Maximum possible score")
+
+
 class DashboardData(BaseModel):
     """Signal dashboard with overall rating and dimension scores."""
 
     signal: str = Field(description="Trading signal: Buy, Hold, Sell, Overweight, or Underweight")
     confidence: float = Field(ge=0, le=100, description="Confidence score 0-100")
-    scores: list[dict] = Field(
+    scores: list[DimensionScore] = Field(
         default_factory=list,
-        description="Dimension scores [{name, value, max}, ...]",
+        description="Dimension scores for the radar chart",
     )
 
 
