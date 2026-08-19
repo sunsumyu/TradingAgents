@@ -662,7 +662,7 @@ def _run_analysis(task_id: str, request: AnalyzeRequest):
                     logger.info("[stream] graph.stream() finished, %d chunks total", len(trace))
                     _stream_ok = True
                     break
-                except (_httpx.RemoteProtocolError, _httpx.RemoteDisconnect,
+                except (_httpx.RemoteProtocolError, _httpx.ProtocolError,
                         ConnectionError, OSError) as exc:
                     if attempt < _MAX_STREAM_RETRIES:
                         logger.warning("Transient network error (attempt %d/%d): %s — retrying in %ds",
