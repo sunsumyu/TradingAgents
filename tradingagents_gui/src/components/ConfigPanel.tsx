@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, Play, Users, RefreshCw, Plus, Trash2 } from "lucide-react";
+import { Activity, Play, Users, RefreshCw, Plus, Trash2, Eye, EyeOff } from "lucide-react";
 import { Card, Field } from "./ui";
 import {
   ANALYST_OPTIONS,
@@ -25,7 +25,33 @@ interface Props {
   onFetchModels: (provider: string, proxyUrl?: string, apiKey?: string) => Promise<{ quick: ModelInfo[]; deep: ModelInfo[] }>;
 }
 
-/** Select with manual input support */
+// ── localStorage helpers ──────────────────────────────────────────────────────
+
+const MODELS_CACHE_KEY = "tradingagents_models_cache";
+const PLATFORM_SELECTIONS_KEY = "tradingagents_platform_selections";
+
+function loadModelsCache(): Record<string, ModelInfo[]> {
+  try {
+    return JSON.parse(localStorage.getItem(MODELS_CACHE_KEY) || "{}");
+  } catch { return {}; }
+}
+
+function saveModelsCache(cache: Record<string, ModelInfo[]>) {
+  localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache));
+}
+
+function loadPlatformSelections(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(PLATFORM_SELECTIONS_KEY) || "{}");
+  } catch { return {}; }
+}
+
+function savePlatformSelections(sel: Record<string, string>) {
+  localStorage.setItem(PLATFORM_SELECTIONS_KEY, JSON.stringify(sel));
+}
+
+// ── ModelSelect ───────────────────────────────────────────────────────────────
+
 function ModelSelect({
   value,
   onChange,
@@ -66,7 +92,8 @@ function ModelSelect({
   );
 }
 
-/** Platform configuration row with collapsible detail */
+// ── PlatformRow ───────────────────────────────────────────────────────────────
+
 function PlatformRow({
   platform,
   onChange,
@@ -83,12 +110,13 @@ function PlatformRow({
   loading: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [showKey, setShowKey] = useState(false);
   const hasApiKey = !!platform.api_key;
   const hasProxy = !!platform.backend_url;
 
   return (
     <div className="rounded-md bg-bg-surface/50 border border-line/50">
-      {/* Header: always visible */}
+      {/* Header */}
       <div
         className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-bg-hover/30 transition-colors"
         onClick={() => setExpanded(!expanded)}
@@ -114,7 +142,7 @@ function PlatformRow({
         </button>
       </div>
 
-      {/* Detail: collapsible */}
+      {/* Detail */}
       {expanded && (
         <div className="px-3 pb-3 space-y-2 border-t border-line/30">
           <div className="pt-2">
@@ -139,13 +167,23 @@ function PlatformRow({
             </select>
           </Field>
           <Field label="API Key">
-            <input
-              type="password"
-              className="input flex-1"
-              value={platform.api_key}
-              onChange={(e) => onChange({ ...platform, api_key: e.target.value })}
-              placeholder={apiKeyEnvForProvider(platform.provider) || "API Key"}
-            />
+            <div className="flex items-center gap-1 flex-1">
+              <input
+                type={showKey ? "text" : "password"}
+                className="input flex-1"
+                value={platform.api_key}
+                onChange={(e) => onChange({ ...platform, api_key: e.target.value })}
+                placeholder={apiKeyEnvForProvider(platform.provider) || "API Key"}
+              />
+              <button
+                type="button"
+                className="btn-ghost !p-1 text-text-muted hover:text-text-primary"
+                onClick={() => setShowKey(!showKey)}
+                title={showKey ? "隐藏" : "显示"}
+              >
+                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
             {apiKeyEnvForProvider(platform.provider) && (
               <span className="text-[10px] text-text-muted whitespace-nowrap">
                 {apiKeyEnvForProvider(platform.provider)}
@@ -184,6 +222,8 @@ function PlatformRow({
   );
 }
 
+// ── ConfigPanel ───────────────────────────────────────────────────────────────
+
 export default function ConfigPanel({
   config,
   onChange,
@@ -192,7 +232,9 @@ export default function ConfigPanel({
   onAnalyze,
   onFetchModels,
 }: Props) {
-  const [platformModels, setPlatformModels] = useState<Record<string, ModelInfo[]>>({});
+  // Load persisted caches on mount
+  const [platformModels, setPlatformModels] = useState<Record<string, ModelInfo[]>>(loadModelsCache);
+  const [platformSelections, setPlatformSelections] = useState<Record<string, string>>(loadPlatformSelections);
   const [platformLoading, setPlatformLoading] = useState<Record<string, boolean>>({});
   const [testing, setTesting] = useState(false);
 
@@ -219,18 +261,21 @@ export default function ConfigPanel({
   const deletePlatform = (index: number) => {
     const platformId = config.llm_platforms[index].id;
     const platforms = config.llm_platforms.filter((_, i) => i !== index);
-    // Clear model selections if they reference the deleted platform
     const quickModel = config.quick_model.platform_id === platformId
       ? { platform_id: "", model: "" }
       : config.quick_model;
     const deepModel = config.deep_model.platform_id === platformId
       ? { platform_id: "", model: "" }
       : config.deep_model;
-    // Clear models cache
     const newPlatformModels = { ...platformModels };
     delete newPlatformModels[platformId];
+    const newSelections = { ...platformSelections };
+    delete newSelections[platformId];
     set({ llm_platforms: platforms, quick_model: quickModel, deep_model: deepModel });
     setPlatformModels(newPlatformModels);
+    setPlatformSelections(newSelections);
+    saveModelsCache(newPlatformModels);
+    savePlatformSelections(newSelections);
   };
 
   const handleFetchPlatformModels = async (platform: LLMPlatform) => {
@@ -241,7 +286,10 @@ export default function ConfigPanel({
         platform.backend_url || undefined,
         platform.api_key || undefined,
       );
-      setPlatformModels(prev => ({ ...prev, [platform.id]: result.quick }));
+      const models = result.quick;
+      const updated = { ...platformModels, [platform.id]: models };
+      setPlatformModels(updated);
+      saveModelsCache(updated);
     } catch (e) {
       console.error("Failed to fetch models:", e);
     } finally {
@@ -249,9 +297,22 @@ export default function ConfigPanel({
     }
   };
 
-  // Get models for a platform
   const getSelectedPlatform = (platformId: string) => {
     return config.llm_platforms.find(p => p.id === platformId);
+  };
+
+  /** Resolve model when switching platforms: prefer cached selection, else default */
+  const resolveModel = (platformId: string, isQuick: boolean): string => {
+    // 1. Check per-platform cached selection
+    const cached = platformSelections[platformId];
+    if (cached) return cached;
+    // 2. Fall back to provider default
+    const platform = getSelectedPlatform(platformId);
+    if (platform) {
+      const [q, d] = defaultModelsForProvider(platform.provider);
+      return isQuick ? q : d;
+    }
+    return "";
   };
 
   const [tickerHistory, setTickerHistory] = useState<string[]>(getTickerHistory());
@@ -441,13 +502,9 @@ export default function ConfigPanel({
                     value={config.quick_model.platform_id}
                     onChange={(e) => {
                       const platformId = e.target.value;
-                      const platform = getSelectedPlatform(platformId);
-                      const [dq] = platform ? defaultModelsForProvider(platform.provider) : ["", ""];
+                      const model = platformId ? resolveModel(platformId, true) : "";
                       set({
-                        quick_model: {
-                          platform_id: platformId,
-                          model: dq || "",
-                        },
+                        quick_model: { platform_id: platformId, model },
                       });
                     }}
                   >
@@ -463,7 +520,14 @@ export default function ConfigPanel({
                   <Field label="模型">
                     <ModelSelect
                       value={config.quick_model.model}
-                      onChange={(v) => set({ quick_model: { ...config.quick_model, model: v } })}
+                      onChange={(v) => {
+                        const next = { ...config.quick_model, model: v };
+                        set({ quick_model: next });
+                        // Persist per-platform selection
+                        const updated = { ...platformSelections, [config.quick_model.platform_id]: v };
+                        setPlatformSelections(updated);
+                        savePlatformSelections(updated);
+                      }}
                       models={platformModels[config.quick_model.platform_id] || []}
                       placeholder="输入模型 ID 或从右侧选择"
                     />
@@ -484,13 +548,9 @@ export default function ConfigPanel({
                     value={config.deep_model.platform_id}
                     onChange={(e) => {
                       const platformId = e.target.value;
-                      const platform = getSelectedPlatform(platformId);
-                      const [, dd] = platform ? defaultModelsForProvider(platform.provider) : ["", ""];
+                      const model = platformId ? resolveModel(platformId, false) : "";
                       set({
-                        deep_model: {
-                          platform_id: platformId,
-                          model: dd || "",
-                        },
+                        deep_model: { platform_id: platformId, model },
                       });
                     }}
                   >
@@ -506,7 +566,13 @@ export default function ConfigPanel({
                   <Field label="模型">
                     <ModelSelect
                       value={config.deep_model.model}
-                      onChange={(v) => set({ deep_model: { ...config.deep_model, model: v } })}
+                      onChange={(v) => {
+                        const next = { ...config.deep_model, model: v };
+                        set({ deep_model: next });
+                        const updated = { ...platformSelections, [config.deep_model.platform_id]: v };
+                        setPlatformSelections(updated);
+                        savePlatformSelections(updated);
+                      }}
                       models={platformModels[config.deep_model.platform_id] || []}
                       placeholder="输入模型 ID 或从右侧选择"
                     />
