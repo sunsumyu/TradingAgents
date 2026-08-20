@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./lib/api";
 import {
   DEFAULT_CONFIG,
@@ -12,7 +12,8 @@ import {
 import TopBar from "./components/TopBar";
 import ConfigPanel from "./components/ConfigPanel";
 import ProgressPanel from "./components/ProgressPanel";
-import ReportPanel from "./components/ReportPanel";
+
+const ReportPanel = lazy(() => import("./components/ReportPanel"));
 
 type Phase = "config" | "analyzing" | "report" | "error";
 
@@ -181,14 +182,16 @@ export default function App() {
       )}
 
       {phase === "report" && report && (
-        <ReportPanel
-          ticker={report.ticker}
-          signal={report.signal}
-          reportMd={report.report_md}
-          sections={report.sections}
-          chartData={report.chart_data}
-          onBack={() => setPhase("config")}
-        />
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-text-secondary">加载中...</div>}>
+          <ReportPanel
+            ticker={report.ticker}
+            signal={report.signal}
+            reportMd={report.report_md}
+            sections={report.sections}
+            chartData={report.chart_data}
+            onBack={() => setPhase("config")}
+          />
+        </Suspense>
       )}
 
       {phase === "error" && (
