@@ -30,24 +30,29 @@ interface Props {
 const MODELS_CACHE_KEY = "tradingagents_models_cache";
 const PLATFORM_SELECTIONS_KEY = "tradingagents_platform_selections";
 
-function loadModelsCache(): Record<string, ModelInfo[]> {
+function safeJsonParse<T>(key: string, fallback: T): T {
   try {
-    return JSON.parse(localStorage.getItem(MODELS_CACHE_KEY) || "{}");
-  } catch { return {}; }
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function loadModelsCache(): Record<string, ModelInfo[]> {
+  return safeJsonParse(MODELS_CACHE_KEY, {});
 }
 
 function saveModelsCache(cache: Record<string, ModelInfo[]>) {
-  localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache));
+  try { localStorage.setItem(MODELS_CACHE_KEY, JSON.stringify(cache)); } catch { /* ignore */ }
 }
 
 function loadPlatformSelections(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(PLATFORM_SELECTIONS_KEY) || "{}");
-  } catch { return {}; }
+  return safeJsonParse(PLATFORM_SELECTIONS_KEY, {});
 }
 
 function savePlatformSelections(sel: Record<string, string>) {
-  localStorage.setItem(PLATFORM_SELECTIONS_KEY, JSON.stringify(sel));
+  try { localStorage.setItem(PLATFORM_SELECTIONS_KEY, JSON.stringify(sel)); } catch { /* ignore */ }
 }
 
 // ── ModelSelect ───────────────────────────────────────────────────────────────
@@ -167,23 +172,21 @@ function PlatformRow({
             </select>
           </Field>
           <Field label="API Key">
-            <div className="flex items-center gap-1 flex-1">
-              <input
-                type={showKey ? "text" : "password"}
-                className="input flex-1"
-                value={platform.api_key}
-                onChange={(e) => onChange({ ...platform, api_key: e.target.value })}
-                placeholder={apiKeyEnvForProvider(platform.provider) || "API Key"}
-              />
-              <button
-                type="button"
-                className="btn-ghost !p-1 text-text-muted hover:text-text-primary"
-                onClick={() => setShowKey(!showKey)}
-                title={showKey ? "隐藏" : "显示"}
-              >
-                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
+            <input
+              type={showKey ? "text" : "password"}
+              className="input flex-1"
+              value={platform.api_key}
+              onChange={(e) => onChange({ ...platform, api_key: e.target.value })}
+              placeholder={apiKeyEnvForProvider(platform.provider) || "API Key"}
+            />
+            <button
+              type="button"
+              className="btn-ghost !p-1 text-text-muted hover:text-text-primary shrink-0"
+              onClick={() => setShowKey(!showKey)}
+              title={showKey ? "隐藏" : "显示"}
+            >
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
             {apiKeyEnvForProvider(platform.provider) && (
               <span className="text-[10px] text-text-muted whitespace-nowrap">
                 {apiKeyEnvForProvider(platform.provider)}
@@ -213,7 +216,7 @@ function PlatformRow({
           </div>
           {models.length > 0 && (
             <div className="text-[10px] text-text-muted">
-              可用模型: {models.map(m => m.label).join(", ")}
+              可用模型: {models.map((m) => m.label).join(", ")}
             </div>
           )}
         </div>
@@ -232,7 +235,6 @@ export default function ConfigPanel({
   onAnalyze,
   onFetchModels,
 }: Props) {
-  // Load persisted caches on mount
   const [platformModels, setPlatformModels] = useState<Record<string, ModelInfo[]>>(loadModelsCache);
   const [platformSelections, setPlatformSelections] = useState<Record<string, string>>(loadPlatformSelections);
   const [platformLoading, setPlatformLoading] = useState<Record<string, boolean>>({});
@@ -240,7 +242,6 @@ export default function ConfigPanel({
 
   const set = (patch: Partial<AnalysisConfig>) => onChange({ ...config, ...patch });
 
-  // Platform management
   const addPlatform = () => {
     const newPlatform: LLMPlatform = {
       id: `platform_${Date.now()}`,
@@ -279,35 +280,27 @@ export default function ConfigPanel({
   };
 
   const handleFetchPlatformModels = async (platform: LLMPlatform) => {
-    setPlatformLoading(prev => ({ ...prev, [platform.id]: true }));
+    setPlatformLoading((prev) => ({ ...prev, [platform.id]: true }));
     try {
       const result = await onFetchModels(
         platform.provider,
         platform.backend_url || undefined,
         platform.api_key || undefined,
       );
-      const models = result.quick;
-      const updated = { ...platformModels, [platform.id]: models };
+      const updated = { ...platformModels, [platform.id]: result.quick };
       setPlatformModels(updated);
       saveModelsCache(updated);
     } catch (e) {
       console.error("Failed to fetch models:", e);
     } finally {
-      setPlatformLoading(prev => ({ ...prev, [platform.id]: false }));
+      setPlatformLoading((prev) => ({ ...prev, [platform.id]: false }));
     }
   };
 
-  const getSelectedPlatform = (platformId: string) => {
-    return config.llm_platforms.find(p => p.id === platformId);
-  };
-
-  /** Resolve model when switching platforms: prefer cached selection, else default */
   const resolveModel = (platformId: string, isQuick: boolean): string => {
-    // 1. Check per-platform cached selection
     const cached = platformSelections[platformId];
     if (cached) return cached;
-    // 2. Fall back to provider default
-    const platform = getSelectedPlatform(platformId);
+    const platform = config.llm_platforms.find((p) => p.id === platformId);
     if (platform) {
       const [q, d] = defaultModelsForProvider(platform.provider);
       return isQuick ? q : d;
@@ -315,7 +308,7 @@ export default function ConfigPanel({
     return "";
   };
 
-  const [tickerHistory, setTickerHistory] = useState<string[]>(getTickerHistory());
+  const [tickerHistory, setTickerHistory] = useState<string[]>(getTickerHistory);
   const [showHistory, setShowHistory] = useState(false);
 
   const handleTest = async () => {
@@ -503,9 +496,7 @@ export default function ConfigPanel({
                     onChange={(e) => {
                       const platformId = e.target.value;
                       const model = platformId ? resolveModel(platformId, true) : "";
-                      set({
-                        quick_model: { platform_id: platformId, model },
-                      });
+                      set({ quick_model: { platform_id: platformId, model } });
                     }}
                   >
                     <option value="">请选择平台...</option>
@@ -521,9 +512,7 @@ export default function ConfigPanel({
                     <ModelSelect
                       value={config.quick_model.model}
                       onChange={(v) => {
-                        const next = { ...config.quick_model, model: v };
-                        set({ quick_model: next });
-                        // Persist per-platform selection
+                        set({ quick_model: { ...config.quick_model, model: v } });
                         const updated = { ...platformSelections, [config.quick_model.platform_id]: v };
                         setPlatformSelections(updated);
                         savePlatformSelections(updated);
@@ -549,9 +538,7 @@ export default function ConfigPanel({
                     onChange={(e) => {
                       const platformId = e.target.value;
                       const model = platformId ? resolveModel(platformId, false) : "";
-                      set({
-                        deep_model: { platform_id: platformId, model },
-                      });
+                      set({ deep_model: { platform_id: platformId, model } });
                     }}
                   >
                     <option value="">请选择平台...</option>
@@ -567,8 +554,7 @@ export default function ConfigPanel({
                     <ModelSelect
                       value={config.deep_model.model}
                       onChange={(v) => {
-                        const next = { ...config.deep_model, model: v };
-                        set({ deep_model: next });
+                        set({ deep_model: { ...config.deep_model, model: v } });
                         const updated = { ...platformSelections, [config.deep_model.platform_id]: v };
                         setPlatformSelections(updated);
                         savePlatformSelections(updated);
