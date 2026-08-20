@@ -19,6 +19,7 @@ type Phase = "config" | "analyzing" | "report" | "error";
 
 export default function App() {
   const [config, setConfig] = useState<AnalysisConfig>(() => loadConfig());
+  // Always start at config — never restore a stale phase from a previous session
   const [phase, setPhase] = useState<Phase>("config");
   const [backendOnline, setBackendOnline] = useState(false);
   const [events, setEvents] = useState<ProgressEvent[]>([]);
