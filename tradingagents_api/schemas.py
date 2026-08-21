@@ -118,6 +118,11 @@ class KlineData(BaseModel):
     ma10: list[float | None] = Field(default_factory=list, description="10-day moving average")
     ma20: list[float | None] = Field(default_factory=list, description="20-day moving average")
     ma50: list[float | None] = Field(default_factory=list, description="50-day moving average")
+    ema12: list[float | None] = Field(default_factory=list, description="12-period EMA")
+    ema26: list[float | None] = Field(default_factory=list, description="26-period EMA")
+    kdj_k: list[float | None] = Field(default_factory=list, description="KDJ K line")
+    kdj_d: list[float | None] = Field(default_factory=list, description="KDJ D line")
+    kdj_j: list[float | None] = Field(default_factory=list, description="KDJ J line")
 
 
 class MacdData(BaseModel):
@@ -174,6 +179,35 @@ class FundFlowData(BaseModel):
     retail: list[float] = Field(description="Retail investor flow per date")
 
 
+class FundamentalsData(BaseModel):
+    """Fundamental stock data from yfinance / A-stock vendor."""
+
+    market_cap: float | None = Field(default=None, description="Market capitalization")
+    pe_ratio: float | None = Field(default=None, description="PE ratio (TTM)")
+    forward_pe: float | None = Field(default=None, description="Forward PE ratio")
+    pb_ratio: float | None = Field(default=None, description="Price to Book ratio")
+    eps_ttm: float | None = Field(default=None, description="EPS (TTM)")
+    dividend_yield: float | None = Field(default=None, description="Dividend yield")
+    beta: float | None = Field(default=None, description="Beta coefficient")
+    fifty_two_week_high: float | None = Field(default=None, description="52-week high")
+    fifty_two_week_low: float | None = Field(default=None, description="52-week low")
+    fifty_day_average: float | None = Field(default=None, description="50-day moving average")
+    two_hundred_day_average: float | None = Field(default=None, description="200-day moving average")
+    sector: str | None = Field(default=None, description="Sector")
+    industry: str | None = Field(default=None, description="Industry")
+    name: str | None = Field(default=None, description="Company name")
+
+
+class NewsItem(BaseModel):
+    """A single news article."""
+
+    title: str = Field(description="Article title")
+    publisher: str | None = Field(default=None, description="Publisher name")
+    link: str | None = Field(default=None, description="Article URL")
+    pub_date: str | None = Field(default=None, description="Publication date")
+    summary: str | None = Field(default=None, description="Article summary")
+
+
 class ChartData(BaseModel):
     """Structured chart data for report visualization.
 
@@ -203,3 +237,24 @@ class ReportResponse(BaseModel):
         default=None,
         description="Structured chart data for visualization (optional for backward compat)",
     )
+
+
+class MarketDataRequest(BaseModel):
+    """Request for standalone market data (no agent analysis)."""
+
+    ticker: str = Field(description="Stock ticker symbol")
+    date: str = Field(description="Date in YYYY-MM-DD format")
+
+
+class MarketDataResponse(BaseModel):
+    """Response containing all market data for preview."""
+
+    ticker: str
+    date: str
+    kline: KlineData | None = None
+    macd: MacdData | None = None
+    rsi: RsiData | None = None
+    bollinger: BollingerData | None = None
+    fund_flow: FundFlowData | None = None
+    fundamentals: FundamentalsData | None = None
+    news: list[NewsItem] = Field(default_factory=list)
