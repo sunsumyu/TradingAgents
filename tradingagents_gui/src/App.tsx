@@ -17,11 +17,26 @@ const ReportPanel = lazy(() => import("./components/ReportPanel"));
 
 type Phase = "config" | "analyzing" | "report" | "error";
 
+/** How many times to retry the health check on mount before declaring failure. */
+const HEALTH_RETRIES = 6;
+/** Delay between retries in ms. */
+const HEALTH_RETRY_DELAY = 2000;
+
 export default function App() {
   const [config, setConfig] = useState<AnalysisConfig>(() => loadConfig());
   // Always start at config — never restore a stale phase from a previous session
   const [phase, setPhase] = useState<Phase>("config");
   const [backendOnline, setBackendOnline] = useState(false);
+  /**
+   * "connecting"  — first mount, still retrying health checks.
+   * "failed"      — all retries exhausted, backend truly unreachable.
+   * "idle"        — user manually clicked 测试连接 (no auto-retry needed).
+   *
+   * When `connecting`, the UI shows a blue info banner ("正在连接后端…") and
+   * the TopBar shows a pulsing amber dot.  Only after all retries are
+   * exhausted does it flip to "failed" and show the yellow warning banner.
+   */
+  const [backendStatus, setBackendStatus] = useState<"connecting" | "failed" | "idle">("connecting");
   const [events, setEvents] = useState<ProgressEvent[]>([]);
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [error, setError] = useState<string>("");
@@ -56,14 +71,42 @@ export default function App() {
     api.saveConfig(next as unknown as Record<string, unknown>).catch(console.error);
   }, []);
 
-  // ── Health check (auto on mount + manual) ────────────────────────────────
+  // ── Health check (auto-retry on mount + manual) ────────────────────────
   const checkHealth = useCallback(async () => {
     const ok = await api.healthCheck();
     setBackendOnline(ok);
+    return ok;
   }, []);
 
+  // Auto-retry on mount: the backend may still be importing modules when the
+  // GUI launches.  Retry up to HEALTH_RETRIES times before giving up.
   useEffect(() => {
-    checkHealth();
+    let cancelled = false;
+    let attempt = 0;
+
+    const tryConnect = async () => {
+      while (attempt < HEALTH_RETRIES && !cancelled) {
+        attempt++;
+        setBackendStatus("connecting");
+        const ok = await api.healthCheck();
+        if (cancelled) return;
+        if (ok) {
+          setBackendOnline(true);
+          setBackendStatus("idle");
+          return;
+        }
+        // Not yet — wait before retrying.
+        await new Promise((r) => setTimeout(r, HEALTH_RETRY_DELAY));
+      }
+      // All retries exhausted.
+      if (!cancelled) {
+        setBackendOnline(false);
+        setBackendStatus("failed");
+      }
+    };
+
+    tryConnect();
+    return () => { cancelled = true; };
   }, [checkHealth]);
 
   // ── Start analysis ────────────────────────────────────────────────────────
@@ -154,15 +197,17 @@ export default function App() {
 
   return (
     <div className="h-full flex flex-col">
-      <TopBar backendOnline={backendOnline} />
+      <TopBar backendOnline={backendOnline} backendStatus={backendStatus} />
 
       {phase === "config" && (
         <ConfigPanel
           config={config}
           onChange={handleConfigChange}
           backendOnline={backendOnline}
+          backendStatus={backendStatus}
           onTestConnection={checkHealth}
           onAnalyze={startAnalysis}
+          onMarketData={() => { /* TODO: implement market data panel */ }}
           onFetchModels={async (provider, proxyUrl, apiKey) => {
             const m = await api.getModels(provider, proxyUrl, apiKey);
             return { quick: m.quick, deep: m.deep };

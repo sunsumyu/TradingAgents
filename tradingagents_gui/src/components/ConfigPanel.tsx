@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Activity, Play, Users, RefreshCw, Plus, Trash2, Eye, EyeOff } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Activity, Play, Users, RefreshCw, Plus, Trash2, Eye, EyeOff, BarChart3 } from "lucide-react";
 import { Card, Field } from "./ui";
 import {
   ANALYST_OPTIONS,
@@ -20,8 +20,10 @@ interface Props {
   config: AnalysisConfig;
   onChange: (config: AnalysisConfig) => void;
   backendOnline: boolean;
+  backendStatus: "connecting" | "failed" | "idle";
   onTestConnection: () => void;
   onAnalyze: () => void;
+  onMarketData: () => void;
   onFetchModels: (provider: string, proxyUrl?: string, apiKey?: string) => Promise<{ quick: ModelInfo[]; deep: ModelInfo[] }>;
 }
 
@@ -231,14 +233,18 @@ export default function ConfigPanel({
   config,
   onChange,
   backendOnline,
+  backendStatus,
   onTestConnection,
   onAnalyze,
+  onMarketData,
   onFetchModels,
 }: Props) {
   const [platformModels, setPlatformModels] = useState<Record<string, ModelInfo[]>>(loadModelsCache);
   const [platformSelections, setPlatformSelections] = useState<Record<string, string>>(loadPlatformSelections);
   const [platformLoading, setPlatformLoading] = useState<Record<string, boolean>>({});
   const [testing, setTesting] = useState(false);
+  const [manualTesting, setManualTesting] = useState(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const set = (patch: Partial<AnalysisConfig>) => onChange({ ...config, ...patch });
 
@@ -312,10 +318,23 @@ export default function ConfigPanel({
   const [showHistory, setShowHistory] = useState(false);
 
   const handleTest = async () => {
+    if (manualTesting) return;
+    setManualTesting(true);
     setTesting(true);
     await onTestConnection();
-    setTimeout(() => setTesting(false), 800);
+    // Keep the spinner visible briefly so the user sees feedback.
+    setTimeout(() => {
+      setTesting(false);
+      setManualTesting(false);
+    }, 800);
   };
+
+  // Cleanup pending timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -329,13 +348,20 @@ export default function ConfigPanel({
           </p>
         </div>
 
-        {!backendOnline && (
+        {!backendOnline && backendStatus === "connecting" && (
+          <div className="mb-4 rounded-lg border border-blue-400/30 bg-blue-400/10 px-4 py-3 text-[12px] text-blue-300 leading-relaxed flex items-center gap-2">
+            <span className="inline-block w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin shrink-0" />
+            正在连接后端服务（127.0.0.1:8420）…如果后端刚启动，请稍候。
+          </div>
+        )}
+
+        {!backendOnline && backendStatus === "failed" && (
           <div className="mb-4 rounded-lg border border-warn/30 bg-warn/15 px-4 py-3 text-[12px] text-warn leading-relaxed">
-            ⚠️ 未检测到后端服务（127.0.0.1:8420）。请先运行{" "}
+            ⚠️ 后端服务未响应（127.0.0.1:8420）。请先运行{" "}
             <code className="font-mono">python start_gui.py</code>{" "}
             启动后端，或在项目目录执行{" "}
             <code className="font-mono">python -m granian --interface asgi --host 127.0.0.1 --port 8420 tradingagents_api.server:app</code>
-            ，然后点击「测试连接」确认。当前「开始分析」已禁用，避免误报 Failed to fetch。
+            ，然后点击「测试连接」确认。当前「开始分析」已禁用。
           </div>
         )}
 
@@ -572,8 +598,26 @@ export default function ConfigPanel({
         <div className="flex items-center justify-between">
           <button className="btn-ghost" onClick={handleTest} disabled={testing}>
             <Activity size={13} />
-            {testing ? "检测中…" : "测试连接"}
-            <span className={`dot ${backendOnline ? "bg-up" : "bg-text-muted"}`} style={{ marginLeft: 4 }} />
+            {backendStatus === "connecting"
+              ? "连接中…"
+              : testing
+                ? "检测中…"
+                : "测试连接"}
+            <span
+              className={`dot ${
+                backendOnline ? "bg-up" : backendStatus === "connecting" ? "bg-warn animate-pulse" : "bg-text-muted"
+              }`}
+              style={{ marginLeft: 4 }}
+            />
+          </button>
+
+          <button
+            className="btn-ghost"
+            onClick={onMarketData}
+            disabled={!backendOnline || !config.ticker}
+          >
+            <BarChart3 size={13} />
+            查看数据
           </button>
 
           <button
