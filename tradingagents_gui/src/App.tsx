@@ -14,8 +14,9 @@ import ConfigPanel from "./components/ConfigPanel";
 import ProgressPanel from "./components/ProgressPanel";
 
 const ReportPanel = lazy(() => import("./components/ReportPanel"));
+const MarketDataPanel = lazy(() => import("./components/MarketDataPanel"));
 
-type Phase = "config" | "analyzing" | "report" | "error";
+type Phase = "config" | "market_data" | "analyzing" | "report" | "error";
 
 /** How many times to retry the health check on mount before declaring failure. */
 const HEALTH_RETRIES = 6;
@@ -42,6 +43,8 @@ export default function App() {
   const [error, setError] = useState<string>("");
   const [streamingText, setStreamingText] = useState("");
   const [streamingAgent, setStreamingAgent] = useState("");
+  const [marketData, setMarketData] = useState<import("./lib/types").MarketDataResponse | null>(null);
+  const [_loadingMarketData, setLoadingMarketData] = useState(false);
   const taskIdRef = useRef<string | null>(null);
   const closeStreamRef = useRef<(() => void) | null>(null);
 
@@ -108,6 +111,23 @@ export default function App() {
     tryConnect();
     return () => { cancelled = true; };
   }, [checkHealth]);
+
+  // ── Load market data ─────────────────────────────────────────────────────
+  const loadMarketData = useCallback(async () => {
+    saveConfig(config);
+    setLoadingMarketData(true);
+    try {
+      const data = await api.getMarketData(config.ticker, config.date);
+      setMarketData(data);
+      setPhase("market_data");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setPhase("error");
+    } finally {
+      setLoadingMarketData(false);
+    }
+  }, [config]);
 
   // ── Start analysis ────────────────────────────────────────────────────────
   const startAnalysis = useCallback(async () => {
@@ -207,12 +227,23 @@ export default function App() {
           backendStatus={backendStatus}
           onTestConnection={checkHealth}
           onAnalyze={startAnalysis}
-          onMarketData={() => { /* TODO: implement market data panel */ }}
+          onMarketData={loadMarketData}
           onFetchModels={async (provider, proxyUrl, apiKey) => {
             const m = await api.getModels(provider, proxyUrl, apiKey);
             return { quick: m.quick, deep: m.deep };
           }}
         />
+      )}
+
+      {phase === "market_data" && marketData && (
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#787B86]">加载中...</div>}>
+          <MarketDataPanel
+            data={marketData}
+            onBack={() => setPhase("config")}
+            onAnalyze={startAnalysis}
+            isAnalyzing={false}
+          />
+        </Suspense>
       )}
 
       {phase === "analyzing" && (
