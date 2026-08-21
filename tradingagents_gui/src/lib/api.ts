@@ -182,4 +182,17 @@ export const api = {
     });
     return handle<{ status: string; path: string }>(res);
   },
+
+  /** POST /api/market-data — fetch market data for a ticker and date */
+  async getMarketData(ticker: string, date: string): Promise<import("./types").MarketDataResponse> {
+    const resp = await fetch(`${BASE_URL}/api/market-data`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, date }),
+    });
+    if (!resp.ok) {
+      throw new Error(`Market data request failed: ${resp.status}`);
+    }
+    return resp.json();
+  },
 };

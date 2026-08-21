@@ -71,6 +71,11 @@ export interface KlineData {
   ma10?: (number | null)[];
   ma20?: (number | null)[];
   ma50?: (number | null)[];
+  ema12?: (number | null)[];
+  ema26?: (number | null)[];
+  kdj_k?: (number | null)[];
+  kdj_d?: (number | null)[];
+  kdj_j?: (number | null)[];
 }
 
 export interface MacdData {
@@ -104,6 +109,43 @@ export interface FundFlowData {
   northbound: number[];
   mainForce: number[];
   retail: number[];
+}
+
+export interface FundamentalsData {
+  market_cap?: number | null;
+  pe_ratio?: number | null;
+  forward_pe?: number | null;
+  pb_ratio?: number | null;
+  eps_ttm?: number | null;
+  dividend_yield?: number | null;
+  beta?: number | null;
+  fifty_two_week_high?: number | null;
+  fifty_two_week_low?: number | null;
+  fifty_day_average?: number | null;
+  two_hundred_day_average?: number | null;
+  sector?: string | null;
+  industry?: string | null;
+  name?: string | null;
+}
+
+export interface NewsItem {
+  title: string;
+  publisher?: string;
+  link?: string;
+  pub_date?: string;
+  summary?: string;
+}
+
+export interface MarketDataResponse {
+  ticker: string;
+  date: string;
+  kline?: KlineData | null;
+  macd?: MacdData | null;
+  rsi?: RsiData | null;
+  bollinger?: BollingerData | null;
+  fund_flow?: FundFlowData | null;
+  fundamentals?: FundamentalsData | null;
+  news?: NewsItem[];
 }
 
 export interface ChartData {
