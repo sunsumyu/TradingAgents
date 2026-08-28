@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import date as _date
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from starlette.responses import StreamingResponse
@@ -118,3 +121,66 @@ async def get_report_section(task_id: str, section: str):
         )
 
     return {"section": section, "content": task.report.sections[section]}
+
+
+# ---------------------------------------------------------------------------
+# Checkpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/checkpoints")
+async def list_checkpoints():
+    """List all resumable checkpoint databases.
+
+    Returns a list of tickers that have checkpoint files on disk, along
+    with metadata (file size, modification time) so the GUI can show
+    which analyses can be resumed.
+    """
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    data_dir = DEFAULT_CONFIG.get("data_cache_dir", str(Path.home() / ".tradingagents"))
+    cp_dir = Path(data_dir) / "checkpoints"
+
+    if not cp_dir.exists():
+        return {"checkpoints": []}
+
+    checkpoints = []
+    for db_file in cp_dir.glob("*.db"):
+        stat = db_file.stat()
+        checkpoints.append({
+            "ticker": db_file.stem,
+            "file": str(db_file),
+            "size_bytes": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        })
+
+    return {"checkpoints": checkpoints}
+
+
+@router.get("/api/checkpoints/{ticker}")
+async def get_checkpoint_info(ticker: str):
+    """Check if a resumable checkpoint exists for a specific ticker.
+
+    Returns the checkpoint step number if one exists, otherwise null.
+    The GUI can use this to show a "继续分析" button.
+    """
+    from tradingagents.default_config import DEFAULT_CONFIG
+    from tradingagents.graph.checkpointer import checkpoint_step
+
+    data_dir = DEFAULT_CONFIG.get("data_cache_dir", str(Path.home() / ".tradingagents"))
+    today = _date.today().isoformat()
+
+    step = checkpoint_step(data_dir, ticker, today)
+    if step is not None:
+        return {
+            "ticker": ticker,
+            "has_checkpoint": True,
+            "step": step,
+            "date": today,
+        }
+    return {
+        "ticker": ticker,
+        "has_checkpoint": False,
+        "step": None,
+        "date": today,
+    }

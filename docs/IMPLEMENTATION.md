@@ -98,6 +98,100 @@ Python 生态最流行的回测框架，以简洁的 API 和丰富的技术指�
 
 **TradingAgents 差异化**：FreqTrade 是"自动化执行机器人"，TradingAgents 是"智能分析顾问"。
 
+#### OpenBB (72k+ Stars)
+全球最大的开源金融数据平台，定位"Bloomberg 终端的开源替代"。
+
+**优势**：
+- "一次连接，处处消费"的数据基础设施
+- Python SDK + Workspace (企业 UI) + Excel + AI Agent 多端接入
+- 多资产支持：股票、加密货币、固定收益、期权、衍生品
+- MCP Server 集成，支持 AI Agent 调用
+
+**不足**：
+- 偏数据层，缺乏多智能体协作决策
+- 商业化导向（Workspace 为付费产品）
+
+**TradingAgents 差异化**：OpenBB 是"数据基础设施"，TradingAgents 是"决策智能体"。OpenBB 可作为 TradingAgents 的数据源之一。
+
+#### Microsoft Qlib (48k+ Stars)
+微软开源的 AI 量化投资平台，覆盖从因子挖掘到订单执行的全链路。
+
+**优势**：
+- 完整 ML 管道：alpha 挖掘 → 风险建模 → 组合优化 → 订单执行
+- Model Zoo 含 20+ 模型（LightGBM, LSTM, Transformer, HIST）
+- 自适应策略（DDG-DA, 滚动再训练）
+- 高性能数据服务器
+
+**不足**：
+- 无 LLM/自然语言交互
+- 学习曲线陡峭（需 PyTorch + 量化金融知识）
+- A 股支持需自行接入数据源
+
+**TradingAgents 差异化**：Qlib 是"机器学习量化引擎"，TradingAgents 是"大语言模型分析引擎"。Qlib 擅长因子挖掘和信号生成，TradingAgents 擅长认知推理和自然语言报告。
+
+#### FinGPT (21k+ Stars)
+开源金融大语言模型框架，专注于 LLM 在金融领域的轻量化适配。
+
+**优势**：
+- LoRA 微调成本 < $300（vs BloombergGPT 的 $267 万）
+- FinGPT-Forecaster: 基于新闻+市场+基本面预测股价
+- 金融文本情感分析达到 SOTA
+- RAG 实时数据检索
+
+**不足**：
+- 偏研究/模型层面，缺乏完整的分析工作流
+- 无多智能体协作机制
+- 无 GUI 界面
+
+**TradingAgents 差异化**：FinGPT 是"金融 LLM 模型层"，TradingAgents 是"金融分析应用层"。FinGPT 的模型可被 TradingAgents 集成使用。
+
+#### akshare (22k+ Stars)
+中国最全面的金融数据接口库，覆盖股票、债券、基金、期货、宏观经济。
+
+**优势**：
+- 数据覆盖面极广（A 股全维度）
+- API 设计简洁，零认证
+- 社区活跃，更新频繁
+
+**不足**：
+- 纯数据获取库，无分析能力
+- 无 LLM 集成
+- 无 GUI
+
+**TradingAgents 差异化**：akshare 是"数据采集工具"，TradingAgents 是"分析决策系统"。TradingAgents 已通过 a_stock/ 模块集成了类似的数据源（东方财富、新浪、腾讯）。
+
+#### ai-berkshire (16k+ Stars)
+AI 时代的巴菲特：基于 Claude Code / Codex 构建的价值投资研究框架。
+
+**优势**：
+- 多智能体并行研究 + 对抗分析
+- 融合四大投资大师方法论（巴菲特、芒格、段永平、李录）
+- 深度基本面分析 + 组合管理
+- 聚焦 A 股市场
+
+**不足**：
+- 依赖 Claude Code / Codex 平台
+- 无独立 GUI
+- 价值投资单一策略
+
+**TradingAgents 差异化**：ai-berkshire 是"价值投资专题框架"，TradingAgents 是"通用分析框架"。TradingAgents 支持更多分析维度和 LLM 提供商。
+
+#### FinRL (16k+ Stars)
+首个开源金融强化学习框架，覆盖从训练到实盘的完整管道。
+
+**优势**：
+- Train-Test-Trade 完整管道
+- DRL 算法：A2C, DDPG, PPO, SAC, TD3
+- 多数据源：Yahoo Finance, Alpaca, Binance, WRDS
+- NeurIPS 2020 Workshop 论文
+
+**不足**：
+- 强化学习门槛高
+- 无自然语言交互
+- 无多智能体协作
+
+**TradingAgents 差异化**：FinRL 是"强化学习交易引擎"，TradingAgents 是"大语言模型分析引擎"。两者解决不同层面的问题。
+
 ### 1.4 与量化平台的功能对标
 
 对标聚宽 (JoinQuant)、米筐 (RiceQuant)、优矿 (Uqer) 等中国主流量化平台：
