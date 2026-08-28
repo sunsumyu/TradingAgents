@@ -57,6 +57,10 @@ class AnalyzeRequest(BaseModel):
     anthropic_effort: str | None = Field(
         default=None, description="Claude effort level"
     )
+    resume: bool = Field(
+        default=False,
+        description="If True, resume from the last checkpoint for this ticker+date+config",
+    )
 
 
 class AnalyzeResponse(BaseModel):
@@ -246,6 +250,40 @@ class MarketDataRequest(BaseModel):
     date: str = Field(description="Date in YYYY-MM-DD format")
 
 
+class RealtimePriceRequest(BaseModel):
+    """Request for batch realtime quotes (watchlist polling)."""
+
+    tickers: list[str] = Field(
+        default_factory=list,
+        max_length=100,
+        description="Ticker symbols to quote (A-shares and global symbols mixed)",
+    )
+
+
+class RealtimePriceItem(BaseModel):
+    """Latest price snapshot for a single ticker."""
+
+    price: float = Field(description="Latest traded price")
+    change: float = Field(default=0.0, description="Absolute change vs previous close")
+    changePct: float = Field(default=0.0, description="Percent change vs previous close")
+    name: str | None = Field(default=None, description="Instrument display name, if known")
+
+
+class ChartDataRequest(BaseModel):
+    """Request for chart data with configurable date range."""
+
+    ticker: str = Field(description="Stock ticker symbol")
+    date: str = Field(description="Date in YYYY-MM-DD format")
+    days: int = Field(default=90, description="Calendar days of history to fetch (default 90)")
+    interval: str | None = Field(
+        default=None,
+        description=(
+            "Optional bar granularity: '1m'/'5m'/'15m'/'30m'/'60m' for minute "
+            "bars. None or '1d' means daily bars (the default)."
+        ),
+    )
+
+
 class MarketDataResponse(BaseModel):
     """Response containing all market data for preview."""
 
@@ -258,3 +296,40 @@ class MarketDataResponse(BaseModel):
     fund_flow: FundFlowData | None = None
     fundamentals: FundamentalsData | None = None
     news: list[NewsItem] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Request models previously inline in server.py
+# ---------------------------------------------------------------------------
+
+
+class ScreenerRequest(BaseModel):
+    """Request body for the natural-language screener."""
+
+    query: str
+    max_results: int = 20
+    ticker_hint: str | None = None
+
+
+class PortfolioTradeRequest(BaseModel):
+    """Request body for executing a simulated trade."""
+
+    ticker: str
+    action: str  # "buy" or "sell"
+    quantity: int
+    price: float
+    name: str = ""
+    reason: str = ""
+
+
+class ConfigSaveRequest(BaseModel):
+    """Request body for saving GUI config."""
+
+    config: dict[str, Any]
+
+
+class CacheClearRequest(BaseModel):
+    """Request body for clearing the data cache."""
+
+    ticker: str | None = None
+    data_type: str | None = None
