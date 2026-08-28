@@ -13,27 +13,6 @@ from langgraph.prebuilt import ToolNode
 # Import the abstract tool methods from agent_utils
 from tradingagents.agents.utils.agent_utils import (
     build_instrument_context,
-    get_balance_sheet,
-    get_cashflow,
-    get_chip_distribution,
-    get_concept_blocks,
-    get_dragon_tiger_board,
-    get_fund_flow,
-    get_fundamentals,
-    get_global_news,
-    get_hot_stocks,
-    get_income_statement,
-    get_indicators,
-    get_industry_comparison,
-    get_insider_transactions,
-    get_lockup_expiry,
-    get_macro_indicators,
-    get_news,
-    get_northbound_flow,
-    get_prediction_markets,
-    get_profit_forecast,
-    get_stock_data,
-    get_verified_market_snapshot,
     resolve_instrument_identity,
 )
 from tradingagents.agents.utils.memory import TradingMemoryLog
@@ -114,6 +93,10 @@ class TradingAgentsGraph:
         # Create LLMs with independent providers (falls back to single-provider if not set)
         self.quick_thinking_llm = create_quick_llm(self.config, **quick_kwargs)
         self.deep_thinking_llm = create_deep_llm(self.config, **deep_kwargs)
+
+        # Keep unwrapped originals so propagate() can re-wrap per-run with cache.
+        self._base_quick_thinking_llm = self.quick_thinking_llm
+        self._base_deep_thinking_llm = self.deep_thinking_llm
 
         self.memory_log = TradingMemoryLog(self.config)
 
@@ -224,74 +207,16 @@ class TradingAgentsGraph:
         return kwargs
 
     def _create_tool_nodes(self) -> dict[str, ToolNode]:
-        """Create tool nodes for different data sources using abstract methods."""
+        """Create tool nodes from the static registry in tool_wiring.py.
+
+        Uses the Registry pattern: tool lists are declared in one place
+        (``ANALYST_TOOLS``), and this method only wraps them in LangGraph
+        ``ToolNode`` instances.  Adding a new analyst means adding one
+        entry to the registry — no changes here.
+        """
+        from .tool_wiring import ANALYST_TOOLS
         return {
-            "market": ToolNode(
-                [
-                    # Core stock data tools
-                    get_stock_data,
-                    # Technical indicators
-                    get_indicators,
-                    # Deterministic verification snapshot (bound to the analyst
-                    # LLM and required by its prompt; must be executable here or
-                    # the call fails and the model reports it "unavailable").
-                    get_verified_market_snapshot,
-                ]
-            ),
-            "social": ToolNode(
-                [
-                    # News tools for social media analysis
-                    get_news,
-                ]
-            ),
-            "news": ToolNode(
-                [
-                    # News and insider information
-                    get_news,
-                    get_global_news,
-                    get_insider_transactions,
-                    get_macro_indicators,
-                    get_prediction_markets,
-                ]
-            ),
-            "fundamentals": ToolNode(
-                [
-                    # Fundamental analysis tools
-                    get_fundamentals,
-                    get_balance_sheet,
-                    get_cashflow,
-                    get_income_statement,
-                ]
-            ),
-            # A-share analysts
-            "policy": ToolNode(
-                [
-                    get_news,
-                    get_global_news,
-                ]
-            ),
-            "hot_money": ToolNode(
-                [
-                    get_stock_data,
-                    get_news,
-                    get_insider_transactions,
-                    get_hot_stocks,
-                    get_northbound_flow,
-                    get_concept_blocks,
-                    get_fund_flow,
-                    get_dragon_tiger_board,
-                    get_industry_comparison,
-                ]
-            ),
-            "lockup": ToolNode(
-                [
-                    get_insider_transactions,
-                    get_news,
-                    get_fundamentals,
-                    get_lockup_expiry,
-                    get_chip_distribution,
-                ]
-            ),
+            name: ToolNode(tools) for name, tools in ANALYST_TOOLS.items() if tools
         }
 
     def _resolve_benchmark(self, ticker: str) -> str:
@@ -484,9 +409,59 @@ class TradingAgentsGraph:
             else:
                 logger.info("Starting fresh for %s on %s", company_name, trade_date)
 
+        # Wrap LLMs with per-call result cache when enabled.
+        _llm_cache = None
+        if self.config.get("llm_cache_enabled"):
+            from tradingagents.agents.utils.cached_llm import CachedLLM
+            from tradingagents.llm_cache import LLMCache
+
+            _llm_cache = LLMCache(
+                self.config["data_cache_dir"],
+                ticker=company_name,
+                ttl_hours=self.config.get("llm_cache_ttl_hours", 24),
+            )
+            self.quick_thinking_llm = CachedLLM(
+                self._base_quick_thinking_llm, _llm_cache
+            )
+            self.deep_thinking_llm = CachedLLM(
+                self._base_deep_thinking_llm, _llm_cache
+            )
+            # Rebuild graph setup with cached LLMs so agent factories pick them up.
+            self.graph_setup = GraphSetup(
+                self.quick_thinking_llm,
+                self.deep_thinking_llm,
+                self.tool_nodes,
+                self.conditional_logic,
+            )
+            self.workflow = self.graph_setup.setup_graph(self.selected_analysts)
+            if self.config.get("checkpoint_enabled") and self._checkpointer_ctx is not None:
+                self.graph = self.workflow.compile(checkpointer=saver)
+            else:
+                self.graph = self.workflow.compile()
+
         try:
             return self._run_graph(company_name, trade_date, asset_type=asset_type)
         finally:
+            # Restore unwrapped LLMs so the next run starts clean.
+            if _llm_cache is not None:
+                stats = _llm_cache.stats()
+                logger.info(
+                    "LLM cache stats for %s: %s", company_name, stats
+                )
+                _llm_cache.prune_expired()
+                _llm_cache.close()
+                self.quick_thinking_llm = self._base_quick_thinking_llm
+                self.deep_thinking_llm = self._base_deep_thinking_llm
+                # Rebuild graph setup with unwrapped LLMs.
+                self.graph_setup = GraphSetup(
+                    self.quick_thinking_llm,
+                    self.deep_thinking_llm,
+                    self.tool_nodes,
+                    self.conditional_logic,
+                )
+                self.workflow = self._base_workflow
+                self.graph = self.workflow.compile()
+
             # C1 FIX: Restore original state so the next run isn't polluted
             # by A-share overrides from a previous run.
             if _astock_applied:
