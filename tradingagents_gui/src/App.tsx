@@ -1,280 +1,158 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, Component, type ReactNode } from "react";
 import { api } from "./lib/api";
-import {
-  DEFAULT_CONFIG,
-  latestTradingDate,
-  loadConfig,
-  saveConfig,
-  type AnalysisConfig,
-  type ProgressEvent,
-  type ReportResponse,
-} from "./lib/types";
+import { saveConfig, type AnalysisConfig } from "./lib/types";
+import { useAnalysisStore } from "./stores/useAnalysisStore";
+import { useConfigStore } from "./stores/useConfigStore";
+import { useMarketDataStore } from "./stores/useMarketDataStore";
 import TopBar from "./components/TopBar";
 import ConfigPanel from "./components/ConfigPanel";
 import ProgressPanel from "./components/ProgressPanel";
 
 const ReportPanel = lazy(() => import("./components/ReportPanel"));
 const MarketDataPanel = lazy(() => import("./components/MarketDataPanel"));
+const ScreenerPanel = lazy(() => import("./components/screener/ScreenerPanel"));
+const PortfolioPanel = lazy(() => import("./components/portfolio/PortfolioPanel"));
 
-type Phase = "config" | "market_data" | "analyzing" | "report" | "error";
-
-/** How many times to retry the health check on mount before declaring failure. */
-const HEALTH_RETRIES = 6;
-/** Delay between retries in ms. */
-const HEALTH_RETRY_DELAY = 2000;
+// ── Error Boundary ──────────────────────────────────────────────
+class ErrorBoundary extends Component<{ children: ReactNode; onReset?: () => void }, { error: string | null }> {
+  state = { error: null as string | null };
+  static getDerivedStateFromError(err: unknown) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 text-center">
+          <p className="text-red-400 text-sm mb-3">组件渲染出错: {this.state.error}</p>
+          <button className="btn-primary text-sm" onClick={() => { this.setState({ error: null }); this.props.onReset?.(); }}>
+            返回重试
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
-  const [config, setConfig] = useState<AnalysisConfig>(() => loadConfig());
-  // Always start at config — never restore a stale phase from a previous session
-  const [phase, setPhase] = useState<Phase>("config");
-  const [backendOnline, setBackendOnline] = useState(false);
-  /**
-   * "connecting"  — first mount, still retrying health checks.
-   * "failed"      — all retries exhausted, backend truly unreachable.
-   * "idle"        — user manually clicked 测试连接 (no auto-retry needed).
-   *
-   * When `connecting`, the UI shows a blue info banner ("正在连接后端…") and
-   * the TopBar shows a pulsing amber dot.  Only after all retries are
-   * exhausted does it flip to "failed" and show the yellow warning banner.
-   */
-  const [backendStatus, setBackendStatus] = useState<"connecting" | "failed" | "idle">("connecting");
-  const [events, setEvents] = useState<ProgressEvent[]>([]);
-  const [report, setReport] = useState<ReportResponse | null>(null);
-  const [error, setError] = useState<string>("");
-  const [streamingText, setStreamingText] = useState("");
-  const [streamingAgent, setStreamingAgent] = useState("");
-  const [marketData, setMarketData] = useState<import("./lib/types").MarketDataResponse | null>(null);
-  const [_loadingMarketData, setLoadingMarketData] = useState(false);
-  const taskIdRef = useRef<string | null>(null);
-  const closeStreamRef = useRef<(() => void) | null>(null);
+  const phase = useAnalysisStore((s) => s.phase);
+  const report = useAnalysisStore((s) => s.report);
+  const config = useConfigStore((s) => s.config);
+  const backendOnline = useConfigStore((s) => s.backendOnline);
+  const navigateTo = useAnalysisStore((s) => s.navigateTo);
+  const startAnalysis = useAnalysisStore((s) => s.startAnalysis);
+  const loadYamlConfig = useConfigStore((s) => s.loadConfig);
+  const connectWithRetry = useConfigStore((s) => s.connectWithRetry);
+  const updateConfig = useConfigStore((s) => s.updateConfig);
+  const fetchMarketData = useMarketDataStore((s) => s.fetchMarketData);
 
-  // ── Load config from YAML on mount ──────────────────────────────────────
+  // ── Load config from YAML + connect to backend on mount ────────────────
   useEffect(() => {
-    const loadYamlConfig = async () => {
-      try {
-        const result = await api.loadConfig();
-        if (result.config) {
-          // Merge YAML config with defaults, always use today's date
-          const merged = { ...DEFAULT_CONFIG, ...result.config, date: latestTradingDate() } as AnalysisConfig;
-          setConfig(merged);
-          saveConfig(merged); // Also save to localStorage
-        }
-      } catch (e) {
-        console.log("No YAML config found, using defaults");
-      }
-    };
     loadYamlConfig();
+    connectWithRetry();
   }, []);
 
-  // ── Config persistence ────────────────────────────────────────────────────
-  const handleConfigChange = useCallback((next: AnalysisConfig) => {
-    setConfig(next);
-    saveConfig(next);
-    // Also save to YAML
-    api.saveConfig(next as unknown as Record<string, unknown>).catch(console.error);
-  }, []);
-
-  // ── Health check (auto-retry on mount + manual) ────────────────────────
-  const checkHealth = useCallback(async () => {
-    const ok = await api.healthCheck();
-    setBackendOnline(ok);
-    return ok;
-  }, []);
-
-  // Auto-retry on mount: the backend may still be importing modules when the
-  // GUI launches.  Retry up to HEALTH_RETRIES times before giving up.
+  // ── Check for existing checkpoint when ticker changes ─────────────────
   useEffect(() => {
+    if (!config.ticker || !backendOnline) return;
     let cancelled = false;
-    let attempt = 0;
-
-    const tryConnect = async () => {
-      while (attempt < HEALTH_RETRIES && !cancelled) {
-        attempt++;
-        setBackendStatus("connecting");
-        const ok = await api.healthCheck();
-        if (cancelled) return;
-        if (ok) {
-          setBackendOnline(true);
-          setBackendStatus("idle");
-          return;
-        }
-        // Not yet — wait before retrying.
-        await new Promise((r) => setTimeout(r, HEALTH_RETRY_DELAY));
-      }
-      // All retries exhausted.
-      if (!cancelled) {
-        setBackendOnline(false);
-        setBackendStatus("failed");
-      }
-    };
-
-    tryConnect();
+    api.getCheckpoint(config.ticker).then((info) => {
+      if (!cancelled) useAnalysisStore.setState({ checkpointInfo: info });
+    }).catch(() => {
+      if (!cancelled) useAnalysisStore.setState({ checkpointInfo: null });
+    });
     return () => { cancelled = true; };
-  }, [checkHealth]);
+  }, [config.ticker, backendOnline]);
 
-  // ── Load market data ─────────────────────────────────────────────────────
-  const loadMarketData = useCallback(async () => {
-    saveConfig(config);
-    setLoadingMarketData(true);
-    try {
-      const data = await api.getMarketData(config.ticker, config.date);
-      setMarketData(data);
-      setPhase("market_data");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(msg);
-      setPhase("error");
-    } finally {
-      setLoadingMarketData(false);
-    }
-  }, [config]);
-
-  // ── Start analysis ────────────────────────────────────────────────────────
-  const startAnalysis = useCallback(async () => {
-    saveConfig(config);
-    setEvents([]);
-    setError("");
-    setPhase("analyzing");
-    try {
-      const resp = await api.startAnalysis(config);
-      taskIdRef.current = resp.task_id;
-
-      // Open SSE stream
-      setStreamingText("");
-      setStreamingAgent("");
-      closeStreamRef.current?.();
-      closeStreamRef.current = api.openProgressStream(
-        resp.task_id,
-        (ev) => {
-          setEvents((prev) => [...prev.slice(-199), ev]);
-          // Clear streaming text on agent switch
-          if (ev.status === "in_progress" && ev.agent !== "System") {
-            setStreamingAgent((prev) => {
-              if (prev !== ev.agent) setStreamingText("");
-              return ev.agent;
-            });
-          }
-        },
-        () => pollReport(resp.task_id),
-        (msg) => {
-          setError(msg);
-          setPhase("error");
-        },
-        (agent, token) => {
-          setStreamingAgent(agent);
-          setStreamingText((prev) => prev + token);
-        },
-      );
-    } catch (e) {
-      // A TypeError from fetch() means the request never reached the backend
-      // (connection refused / server down) — the raw "Failed to fetch" message
-      // is cryptic, so surface an actionable hint instead.
-      const msg =
-        e instanceof TypeError
-          ? "无法连接后端服务（127.0.0.1:8420）。请运行 `python start_gui.py` 启动后端后再试。"
-          : e instanceof Error
-            ? e.message
-            : String(e);
-      setError(msg);
-      setPhase("error");
-    }
-  }, [config]);
-
-  // ── Poll final report (up to 20 min) ─────────────────────────────────────
-  const pollReport = useCallback(async (taskId: string) => {
-    for (let i = 0; i < 240; i++) {
-      try {
-        const r = await api.getReport(taskId);
-        setReport(r);
-        setPhase("report");
-        return;
-      } catch (e) {
-        if (e instanceof Error && e.message === "Report not ready yet") {
-          await new Promise((res) => setTimeout(res, 5000));
-          continue;
-        }
-        setError(e instanceof Error ? e.message : String(e));
-        setPhase("error");
-        return;
-      }
-    }
-    setError("分析超时：后端在 20 分钟内未完成，请检查后端日志");
-    setPhase("error");
-  }, []);
-
-  // ── Cancellation (local only, like the Rust GUI) ─────────────────────────
-  const cancelAnalysis = useCallback(() => {
-    closeStreamRef.current?.();
-    closeStreamRef.current = null;
-    taskIdRef.current = null;
-    setPhase("config");
-  }, []);
-
-  // Cleanup on unmount
+  // ── Cleanup SSE stream on unmount ─────────────────────────────────────
   useEffect(() => {
-    return () => closeStreamRef.current?.();
+    return () => useAnalysisStore.getState()._closeStream?.();
   }, []);
+
+  // ── Handlers ──────────────────────────────────────────────────────────
+  const handleConfigChange = (next: AnalysisConfig) => {
+    updateConfig(next);
+  };
+
+  const handleLoadMarketData = () => {
+    saveConfig(config);
+    fetchMarketData(config.ticker, config.date);
+    navigateTo("market_data");
+  };
+
+  const handleAnalyze = (resume: boolean = false) => {
+    saveConfig(config);
+    startAnalysis(config, resume);
+  };
+
+  const handleScreenerAnalyze = (ticker: string) => {
+    const next = { ...config, ticker };
+    updateConfig(next);
+    navigateTo("config");
+  };
 
   return (
     <div className="h-full flex flex-col">
-      <TopBar backendOnline={backendOnline} backendStatus={backendStatus} />
+      <TopBar />
 
       {phase === "config" && (
         <ConfigPanel
           config={config}
           onChange={handleConfigChange}
-          backendOnline={backendOnline}
-          backendStatus={backendStatus}
-          onTestConnection={checkHealth}
-          onAnalyze={startAnalysis}
-          onMarketData={loadMarketData}
-          onFetchModels={async (provider, proxyUrl, apiKey) => {
-            const m = await api.getModels(provider, proxyUrl, apiKey);
-            return { quick: m.quick, deep: m.deep };
-          }}
+          onAnalyze={handleAnalyze}
+          onMarketData={handleLoadMarketData}
+          onScreener={() => navigateTo("screener")}
+          onPortfolio={() => navigateTo("portfolio")}
         />
       )}
 
-      {phase === "market_data" && marketData && (
+      {phase === "screener" && (
+        <ErrorBoundary onReset={() => navigateTo("config")}>
         <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#787B86]">加载中...</div>}>
-          <MarketDataPanel
-            data={marketData}
-            onBack={() => setPhase("config")}
-            onAnalyze={startAnalysis}
-            isAnalyzing={false}
+          <ScreenerPanel
+            onBack={() => navigateTo("config")}
+            onAnalyzeTicker={handleScreenerAnalyze}
           />
         </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {phase === "portfolio" && (
+        <ErrorBoundary onReset={() => navigateTo("config")}>
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#787B86]">加载中...</div>}>
+          <PortfolioPanel
+            onBack={() => navigateTo("config")}
+          />
+        </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {phase === "market_data" && (
+        <ErrorBoundary onReset={() => navigateTo("config")}>
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#787B86]">加载中...</div>}>
+          <MarketDataPanel />
+        </Suspense>
+        </ErrorBoundary>
       )}
 
       {phase === "analyzing" && (
         <ProgressPanel
           ticker={config.ticker}
           date={config.date}
-          events={events}
           selectedAnalysts={config.analysts}
-          onCancel={cancelAnalysis}
-          streamingText={streamingText}
-          streamingAgent={streamingAgent}
         />
       )}
 
       {phase === "report" && report && (
         <Suspense fallback={<div className="flex-1 flex items-center justify-center text-text-secondary">加载中...</div>}>
-          <ReportPanel
-            ticker={report.ticker}
-            signal={report.signal}
-            reportMd={report.report_md}
-            sections={report.sections}
-            chartData={report.chart_data}
-            onBack={() => setPhase("config")}
-          />
+          <ReportPanel />
         </Suspense>
       )}
 
       {phase === "error" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
-          <div className="text-down text-[14px]">{error}</div>
-          <button className="btn-ghost" onClick={() => setPhase("config")}>
+          <div className="text-down text-[14px]">{useAnalysisStore.getState().error}</div>
+          <button className="btn-ghost" onClick={() => navigateTo("config")}>
             返回配置
           </button>
         </div>

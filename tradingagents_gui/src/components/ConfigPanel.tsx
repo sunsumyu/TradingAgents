@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Activity, Play, Users, RefreshCw, Plus, Trash2, Eye, EyeOff, BarChart3 } from "lucide-react";
+import { Activity, Play, Users, RefreshCw, Plus, Trash2, Eye, EyeOff, BarChart3, RotateCcw, Sparkles, Briefcase } from "lucide-react";
 import { Card, Field } from "./ui";
+import { api } from "../lib/api";
 import {
   ANALYST_OPTIONS,
   apiKeyEnvForProvider,
@@ -15,16 +16,16 @@ import {
   type LLMPlatform,
   type ModelInfo,
 } from "../lib/types";
+import { useConfigStore } from "../stores/useConfigStore";
+import { useAnalysisStore } from "../stores/useAnalysisStore";
 
 interface Props {
   config: AnalysisConfig;
   onChange: (config: AnalysisConfig) => void;
-  backendOnline: boolean;
-  backendStatus: "connecting" | "failed" | "idle";
-  onTestConnection: () => void;
-  onAnalyze: () => void;
+  onAnalyze: (resume?: boolean) => void;
   onMarketData: () => void;
-  onFetchModels: (provider: string, proxyUrl?: string, apiKey?: string) => Promise<{ quick: ModelInfo[]; deep: ModelInfo[] }>;
+  onScreener: () => void;
+  onPortfolio: () => void;
 }
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
@@ -232,13 +233,15 @@ function PlatformRow({
 export default function ConfigPanel({
   config,
   onChange,
-  backendOnline,
-  backendStatus,
-  onTestConnection,
   onAnalyze,
   onMarketData,
-  onFetchModels,
+  onScreener,
+  onPortfolio,
 }: Props) {
+  const backendOnline = useConfigStore((s) => s.backendOnline);
+  const backendStatus = useConfigStore((s) => s.backendStatus);
+  const testConnection = useConfigStore((s) => s.testConnection);
+  const checkpointInfo = useAnalysisStore((s) => s.checkpointInfo);
   const [platformModels, setPlatformModels] = useState<Record<string, ModelInfo[]>>(loadModelsCache);
   const [platformSelections, setPlatformSelections] = useState<Record<string, string>>(loadPlatformSelections);
   const [platformLoading, setPlatformLoading] = useState<Record<string, boolean>>({});
@@ -288,11 +291,12 @@ export default function ConfigPanel({
   const handleFetchPlatformModels = async (platform: LLMPlatform) => {
     setPlatformLoading((prev) => ({ ...prev, [platform.id]: true }));
     try {
-      const result = await onFetchModels(
+      const m = await api.getModels(
         platform.provider,
         platform.backend_url || undefined,
         platform.api_key || undefined,
       );
+      const result = { quick: m.quick, deep: m.deep };
       const updated = { ...platformModels, [platform.id]: result.quick };
       setPlatformModels(updated);
       saveModelsCache(updated);
@@ -321,7 +325,7 @@ export default function ConfigPanel({
     if (manualTesting) return;
     setManualTesting(true);
     setTesting(true);
-    await onTestConnection();
+    await testConnection();
     // Keep the spinner visible briefly so the user sees feedback.
     setTimeout(() => {
       setTesting(false);
@@ -621,6 +625,24 @@ export default function ConfigPanel({
           </button>
 
           <button
+            className="btn-ghost"
+            onClick={onScreener}
+            disabled={!backendOnline}
+          >
+            <Sparkles size={13} />
+            选股器
+          </button>
+
+          <button
+            className="btn-ghost"
+            onClick={onPortfolio}
+            disabled={!backendOnline}
+          >
+            <Briefcase size={13} />
+            组合
+          </button>
+
+          <button
             className="btn-primary !px-8 !py-2.5 text-[13px] font-medium"
             disabled={!backendOnline}
             title={backendOnline ? "" : "后端未运行，请先启动后端"}
@@ -633,6 +655,22 @@ export default function ConfigPanel({
             <Play size={14} fill="currentColor" />
             开始分析
           </button>
+
+          {checkpointInfo?.has_checkpoint && (
+            <button
+              className="btn-ghost !px-4 !py-2.5 text-[13px] font-medium border border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+              disabled={!backendOnline}
+              title={`从断点恢复（已完成步骤 ${checkpointInfo.step}）`}
+              onClick={() => {
+                addTickerToHistory(config.ticker);
+                setTickerHistory(getTickerHistory());
+                onAnalyze(true);
+              }}
+            >
+              <RotateCcw size={14} />
+              继续分析
+            </button>
+          )}
         </div>
       </div>
     </div>

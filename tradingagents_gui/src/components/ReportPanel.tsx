@@ -17,8 +17,9 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { SignalBadge } from "./ui";
 import { HighlightedText } from "./SmartHighlight";
-import ReportCharts from "./ReportCharts";
+import TradingViewLayout from "./tradingview/TradingViewLayout";
 import { buildExportHtml } from "../lib/html-export";
+import { useAnalysisStore } from "../stores/useAnalysisStore";
 
 // ── Tab definitions ─────────────────────────────────────────────────────────────
 
@@ -337,25 +338,16 @@ function SaveDropdown({
 
 // ── Props ──────────────────────────────────────────────────────────────────────
 
-interface Props {
-  ticker: string;
-  signal: string;
-  reportMd: string;
-  sections: Record<string, string>;
-  chartData?: import("../lib/types").ChartData | null;
-  onBack: () => void;
-}
-
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export default function ReportPanel({
-  ticker,
-  signal,
-  reportMd,
-  sections,
-  chartData,
-  onBack,
-}: Props) {
+export default function ReportPanel() {
+  const report = useAnalysisStore((s) => s.report);
+  const navigateTo = useAnalysisStore((s) => s.navigateTo);
+  const ticker = report?.ticker ?? "";
+  const signal = report?.signal ?? "";
+  const reportMd = report?.report_md ?? "";
+  const sections = report?.sections ?? {};
+  const chartData = report?.chart_data ?? null;
   const [activeTab, setActiveTab] = useState("analysts");
   const [tocWidth, setTocWidth] = useState(220);
   const [showSearch, setShowSearch] = useState(false);
@@ -463,7 +455,7 @@ export default function ReportPanel({
           <SignalBadge signal={signal} />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <button className="btn-ghost" onClick={onBack}>
+          <button className="btn-ghost" onClick={() => navigateTo("config")}>
             <ArrowLeft size={13} />
             返回
           </button>
@@ -486,7 +478,7 @@ export default function ReportPanel({
               />
             )}
           </div>
-          <button className="btn-primary" onClick={onBack}>
+          <button className="btn-primary" onClick={() => navigateTo("config")}>
             <RefreshCw size={13} />
             重新分析
           </button>
@@ -565,9 +557,21 @@ export default function ReportPanel({
         {/* Content */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           {content ? (
-            <div ref={contentRef} className="max-w-3xl mx-auto px-10 py-6">
-              {chartData && <ReportCharts chartData={chartData} />}
-              <Markdown content={highlightedContent} />
+            <div ref={contentRef} className="w-full">
+              {chartData && (
+                <div className="h-[500px]">
+                  <TradingViewLayout
+                    kline={chartData.kline}
+                    macd={chartData.macd}
+                    rsi={chartData.rsi}
+                    bollinger={chartData.bollinger}
+                    ticker={ticker}
+                  />
+                </div>
+              )}
+              <div className="px-6 py-6">
+                <Markdown content={highlightedContent} />
+              </div>
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-text-muted text-[13px]">
