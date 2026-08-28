@@ -80,6 +80,42 @@ class TestParseOhlcvCsv:
         for key in ("open", "high", "low", "close", "adj_close", "volume"):
             assert isinstance(records[0][key], float)
 
+    def test_mootdx_column_order(self):
+        """Regression: mootdx emits Date,Open,Close,High,Low,vol,Amount,Volume —
+        Close sits in column 3, not 5.  The parser must map by header name,
+        otherwise A-share klines come back empty with OHLC scrambled."""
+        csv = (
+            "# OHLCV Data for 001232 (A-stock)\n"
+            "# Data source: mootdx (TCP)\n"
+            "\n"
+            "Date,Open,Close,High,Low,vol,Amount,Volume\n"
+            "2026-08-04,234.35,208.01,234.5,188.99,332548.0,6883459584.0,332548.0\n"
+            "2026-08-05,200.0,199.91,209.68,190.88,234810.0,4800000000.0,234810.0\n"
+        )
+        records = parse_ohlcv_csv(csv)
+        assert len(records) == 2
+        r = records[0]
+        assert r["date"] == "2026-08-04"
+        assert r["open"] == 234.35
+        assert r["close"] == 208.01
+        assert r["high"] == 234.5
+        assert r["low"] == 188.99
+        assert r["volume"] == 332548.0
+        assert r["adj_close"] == 208.01  # no Adj Close column -> falls back to close
+
+    def test_sina_column_order(self):
+        """Sina fallback: 6 columns, no Adj Close."""
+        csv = (
+            "Date,Open,High,Low,Close,Volume\n"
+            "2026-08-04,234.35,234.5,188.99,208.01,332548\n"
+        )
+        records = parse_ohlcv_csv(csv)
+        assert len(records) == 1
+        r = records[0]
+        assert r["open"] == 234.35
+        assert r["close"] == 208.01
+        assert r["volume"] == 332548.0
+
 
 # ---------------------------------------------------------------------------
 # parse_indicator_text
@@ -160,8 +196,9 @@ class TestParseIndicatorBundle:
         result = parse_indicator_bundle(bundle)
         assert "rsi" in result
         assert "macd" in result
-        assert result["rsi"]["values"] == [55.32, 52.10]
-        assert result["macd"]["values"] == [0.15, -0.05]
+        # parse_indicator_bundle sorts ascending (oldest first)
+        assert result["rsi"]["values"] == [52.10, 55.32]
+        assert result["macd"]["values"] == [-0.05, 0.15]
 
     def test_empty_bundle(self):
         assert parse_indicator_bundle({}) == {}
