@@ -38,9 +38,34 @@
     background: #4a4f5c;
   }
 
-  /* Card section */
+  /* Card section — subtle elevation + hover lift */
   .card {
-    @apply bg-bg-secondary border border-line rounded-[3px] shadow-card;
+    @apply bg-bg-secondary border border-line rounded-lg shadow-card
+      transition-all duration-200 ease-out-expo;
+  }
+  .card:hover {
+    @apply border-line/80 bg-bg-secondary/95;
+  }
+
+  /* Glowing card — AceternityUI-style hover border glow (opt-in) */
+  .card-glow {
+    @apply relative transition-shadow duration-300;
+  }
+  .card-glow::before {
+    content: "";
+    @apply pointer-events-none absolute inset-0 rounded-lg opacity-0
+      transition-opacity duration-300;
+    background: radial-gradient(
+      600px circle at 50% 0%,
+      rgba(41, 98, 255, 0.08),
+      transparent 40%
+    );
+  }
+  .card-glow:hover::before {
+    @apply opacity-100;
+  }
+  .card-glow:hover {
+    @apply shadow-glow-accent border-accent/30;
   }
 
   /* Section title with accent bar */
@@ -52,28 +77,63 @@
     @apply block w-[3px] h-[14px] bg-accent rounded-[1px];
   }
 
-  /* Inputs */
+  /* Inputs — focus glow ring */
   .input {
-    @apply bg-bg-surface border border-line rounded-[3px] px-2 py-1.5 text-[12px] text-text-primary
-      outline-none transition-colors duration-100 placeholder:text-text-muted;
+    @apply bg-bg-surface border border-line rounded-md px-2 py-1.5 text-[12px] text-text-primary
+      outline-none transition-all duration-150 placeholder:text-text-muted;
   }
   .input:focus {
-    @apply border-accent;
+    @apply border-accent shadow-glow-accent-sm;
   }
 
   /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-[3px] px-3 py-1.5 text-[12px]
-      font-medium transition-colors duration-100 cursor-pointer select-none whitespace-nowrap;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12px]
+      font-medium transition-all duration-150 ease-out-expo cursor-pointer select-none
+      whitespace-nowrap;
   }
   .btn-primary {
-    @apply btn bg-accent text-white hover:bg-accent-hover;
+    @apply btn relative overflow-hidden text-white;
+    background: linear-gradient(180deg, #3b6fff 0%, #2962ff 50%, #1e53e5 100%);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(41, 98, 255, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow:
+      0 2px 4px rgba(0, 0, 0, 0.35),
+      0 0 16px rgba(41, 98, 255, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    filter: brightness(1.08);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0.5px);
+    filter: brightness(0.96);
   }
   .btn-primary:disabled {
     @apply bg-text-muted text-neutral-300 cursor-not-allowed hover:bg-text-muted opacity-60;
+    background: #5a5d68;
+    box-shadow: none;
+  }
+  /* Shine sweep on hover — 21st.dev style */
+  .btn-primary::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0 w-1/3 -translate-x-[150%]
+      transition-transform duration-500 ease-out-expo skew-x-[-20deg];
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.25),
+      transparent
+    );
+  }
+  .btn-primary:hover::after {
+    @apply translate-x-[400%];
   }
   .btn-ghost {
-    @apply btn bg-transparent text-text-secondary border border-line hover:bg-bg-hover hover:text-text-primary;
+    @apply btn bg-transparent text-text-secondary border border-line hover:bg-bg-hover
+      hover:text-text-primary hover:border-text-muted/60;
   }
   .btn-danger {
     @apply btn bg-down text-white hover:opacity-90;
@@ -100,6 +160,60 @@
   /* Signal badge */
   .badge {
     @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium;
+  }
+
+  /* ── Design-system extras (AceternityUI / 21st.dev inspired) ───────────── */
+
+  /* Gradient headline text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #ffffff 0%, #d1d4dc 45%, #6b84c7 100%);
+  }
+  .gradient-text-accent {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(120deg, #2962ff 0%, #6b8cff 50%, #2962ff 100%);
+    background-size: 200% auto;
+    animation: gradient-shift 4s ease infinite;
+  }
+
+  /* Spotlight hero background — radial accent glow from top */
+  .spotlight-bg {
+    position: relative;
+  }
+  .spotlight-bg::before {
+    content: "";
+    @apply pointer-events-none absolute inset-x-0 top-0 h-[420px];
+    background: radial-gradient(
+      ellipse 70% 55% at 50% -10%,
+      rgba(41, 98, 255, 0.14),
+      transparent 70%
+    );
+  }
+
+  /* Frosted glass surface */
+  .glass {
+    @apply bg-bg-secondary/70 backdrop-blur-md border border-line/60;
+  }
+
+  /* Chip / eyebrow label above the headline */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-accent/30
+      bg-accent/10 px-3 py-1 text-[11px] font-medium text-[#8ba6ff];
+  }
+
+  /* Shimmer skeleton line */
+  .skeleton {
+    @apply relative overflow-hidden rounded bg-bg-surface;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 animate-shimmer;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.06),
+      transparent
+    );
   }
 
   /* Markdown report content */
@@ -165,5 +279,15 @@
   }
   .prose-report strong {
     @apply font-semibold text-text-primary;
+  }
+}
+
+@keyframes gradient-shift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
   }
 }

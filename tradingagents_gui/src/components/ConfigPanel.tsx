@@ -341,14 +341,24 @@ export default function ConfigPanel({
   }, []);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-8 py-8">
+    <div className="h-full overflow-y-auto spotlight-bg relative">
+      <div className="max-w-4xl mx-auto px-8 py-8 relative animate-fade-up">
         <div className="mb-8">
-          <h1 className="text-[26px] font-semibold text-text-primary tracking-tight">
-            TradingAgents
+          <span className="chip mb-4 animate-fade-in">
+            <Sparkles size={11} className="text-accent" />
+            多智能体协同 · 实时行情驱动
+          </span>
+          <h1 className="text-[30px] font-bold tracking-tight leading-tight">
+            <span className="gradient-text">TradingAgents</span>
           </h1>
-          <p className="text-[13px] text-text-secondary mt-1.5">
-            AI 驱动的多智能体股票分析 — 分析师 → 研究 → 交易 → 风控 → 投资决策
+          <p className="text-[13px] text-text-secondary mt-2 flex items-center gap-1.5 flex-wrap">
+            <span>AI 驱动的多智能体股票分析</span>
+            {["分析师", "研究", "交易", "风控", "投资决策"].map((step, i) => (
+              <span key={step} className="inline-flex items-center gap-1.5">
+                {i > 0 && <span className="text-text-muted">→</span>}
+                <span className="text-text-secondary/90">{step}</span>
+              </span>
+            ))}
           </p>
         </div>
 
@@ -369,7 +379,7 @@ export default function ConfigPanel({
           </div>
         )}
 
-        <Card title="Symbol" className="mb-4">
+        <Card title="Symbol" className="mb-4" glow>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <Field label="代码">
               <div className="relative">
@@ -423,7 +433,7 @@ export default function ConfigPanel({
           </div>
         </Card>
 
-        <Card title="分析师团队" className="mb-4">
+        <Card title="分析师团队" className="mb-4" glow>
           <div className="flex flex-wrap gap-3">
             {ANALYST_OPTIONS.map(([key, label]) => {
               const checked = config.analysts.includes(key);
@@ -456,7 +466,7 @@ export default function ConfigPanel({
           </div>
         </Card>
 
-        <Card title="研究深度" className="mb-4">
+        <Card title="研究深度" className="mb-4" glow>
           <div className="flex gap-6">
             {DEPTH_OPTIONS.map(([value, label]) => (
               <label
@@ -487,7 +497,7 @@ export default function ConfigPanel({
         </Card>
 
         {/* Platform Configuration */}
-        <Card title="LLM 平台配置" className="mb-4">
+        <Card title="LLM 平台配置" className="mb-4" glow>
           <div className="space-y-3">
             {config.llm_platforms.map((platform, index) => (
               <PlatformRow
@@ -511,7 +521,7 @@ export default function ConfigPanel({
         </Card>
 
         {/* Model Selection */}
-        <Card title="模型选择" className="mb-8">
+        <Card title="模型选择" className="mb-8" glow>
           <div className="space-y-4">
             {/* Quick Model */}
             <div className="p-3 rounded-md bg-bg-surface/50 border border-line/50">
