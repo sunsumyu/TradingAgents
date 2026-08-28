@@ -1,6 +1,53 @@
+import logging
 import warnings
 from abc import ABC, abstractmethod
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+# Truncation detection across providers.  Each provider signals output
+# truncation differently — there is no universal field or value.
+#   · Anthropic          → stop_reason="max_tokens"
+#   · OpenAI compatible  → finish_reason="length"
+#   · Gemini             → finish_reason="max_tokens"
+#   · OpenAI Responses   → status="incomplete" + incomplete_details.reason="max_output_tokens"
+_TRUNCATION_MARKERS = {
+    "stop_reason": {"max_tokens"},
+    "finish_reason": {"length", "max_tokens"},
+}
+_RESPONSES_INCOMPLETE_REASONS = {"max_output_tokens", "max_tokens"}
+
+
+def _truncation_field(metadata: dict):
+    """Return (field, value) if the response was truncated, else None."""
+    for field, truncated_values in _TRUNCATION_MARKERS.items():
+        value = metadata.get(field)
+        if isinstance(value, str) and value.strip().lower() in truncated_values:
+            return field, value
+    # OpenAI Responses API hides truncation in nested incomplete_details
+    if str(metadata.get("status", "")).lower() == "incomplete":
+        details = metadata.get("incomplete_details") or {}
+        reason = details.get("reason") if isinstance(details, dict) else None
+        if isinstance(reason, str) and reason.strip().lower() in _RESPONSES_INCOMPLETE_REASONS:
+            return "incomplete_details.reason", reason
+    return None
+
+
+def warn_if_truncated(response, model: str):
+    """Log a warning when the response was truncated by output token limits.
+
+    Providers signal truncation via different metadata fields; this function
+    checks all known patterns.  Only logs — never raises.
+    """
+    metadata = getattr(response, "response_metadata", {}) or {}
+    field, value = _truncation_field(metadata)
+    if field:
+        logger.warning(
+            "LLM response truncated by output token limit "
+            "(%s=%s, model=%s). Increase max_tokens or shorten the prompt.",
+            field, value, model,
+        )
 
 
 def normalize_content(response):

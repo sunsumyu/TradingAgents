@@ -2,7 +2,7 @@ from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from .base_client import BaseLLMClient, normalize_content
+from .base_client import BaseLLMClient, normalize_content, warn_if_truncated
 from .validators import validate_model
 
 
@@ -14,7 +14,9 @@ class NormalizedChatGoogleGenerativeAI(ChatGoogleGenerativeAI):
     """
 
     def invoke(self, input, config=None, **kwargs):
-        return normalize_content(super().invoke(input, config, **kwargs))
+        response = super().invoke(input, config, **kwargs)
+        warn_if_truncated(response, self.model_name)
+        return normalize_content(response)
 
 
 class GoogleClient(BaseLLMClient):

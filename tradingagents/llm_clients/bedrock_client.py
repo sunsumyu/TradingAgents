@@ -1,7 +1,7 @@
 import os
 from typing import Any
 
-from .base_client import BaseLLMClient, normalize_content
+from .base_client import BaseLLMClient, normalize_content, warn_if_truncated
 from .validators import validate_model
 
 # Bedrock has no global default region; us-west-2 hosts the broadest model set.
@@ -32,7 +32,9 @@ def _bedrock_class():
         """ChatBedrockConverse with normalized (string) content output."""
 
         def invoke(self, input, config=None, **kwargs):
-            return normalize_content(super().invoke(input, config, **kwargs))
+            response = super().invoke(input, config, **kwargs)
+            warn_if_truncated(response, self.model_name)
+            return normalize_content(response)
 
     _BEDROCK_CLASS = NormalizedChatBedrockConverse
     return _BEDROCK_CLASS

@@ -3,7 +3,7 @@ from typing import Any
 
 from langchain_anthropic import ChatAnthropic
 
-from .base_client import BaseLLMClient, normalize_content
+from .base_client import BaseLLMClient, normalize_content, warn_if_truncated
 from .validators import validate_model
 
 _PASSTHROUGH_KWARGS = (
@@ -47,7 +47,9 @@ class NormalizedChatAnthropic(ChatAnthropic):
     """
 
     def invoke(self, input, config=None, **kwargs):
-        return normalize_content(super().invoke(input, config, **kwargs))
+        response = super().invoke(input, config, **kwargs)
+        warn_if_truncated(response, self.model_name)
+        return normalize_content(response)
 
 
 class AnthropicClient(BaseLLMClient):
@@ -88,8 +90,11 @@ class AnthropicClient(BaseLLMClient):
         if "max_retries" not in llm_kwargs:
             llm_kwargs["max_retries"] = self._DEFAULT_MAX_RETRIES
 
-        # Enable streaming so on_chat_model_stream callback fires per-token
-        llm_kwargs.setdefault("streaming", True)
+        # Streaming is disabled by default because some proxies (e.g. Chinese
+        # reverse proxies for Anthropic) drop the connection during large chunked
+        # responses, causing "incomplete chunked read" errors. Non-streaming
+        # mode sends the full response in one body, which is more reliable.
+        llm_kwargs.setdefault("streaming", False)
 
         return NormalizedChatAnthropic(**llm_kwargs)
 

@@ -21,9 +21,14 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_MAX_DEBATE_ROUNDS":    "max_debate_rounds",
     "TRADINGAGENTS_MAX_RISK_ROUNDS":      "max_risk_discuss_rounds",
     "TRADINGAGENTS_CHECKPOINT_ENABLED":   "checkpoint_enabled",
+    "TRADINGAGENTS_LLM_CACHE_ENABLED":   "llm_cache_enabled",
+    "TRADINGAGENTS_LLM_CACHE_TTL_HOURS": "llm_cache_ttl_hours",
+    "TRADINGAGENTS_DATA_CACHE_ENABLED":   "data_cache_enabled",
+    "TRADINGAGENTS_DATA_CACHE_TTL_HOURS": "data_cache_ttl_hours",
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
+    "TRADINGAGENTS_MAX_TOKENS":           "max_tokens",
     "TRADINGAGENTS_LLM_TIMEOUT":          "llm_timeout",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
@@ -118,9 +123,25 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # the provider is unreachable or slow. None leaves each provider at its own
     # default (usually no timeout). Set to 300 (5 minutes) for safety.
     "llm_timeout": 300,
+    # Max output tokens for LLM responses. None leaves each provider at its own
+    # default. Set to a specific value to cap output length and avoid runaway costs.
+    "max_tokens": None,
     # Checkpoint/resume: when True, LangGraph saves state after each node
     # so a crashed run can resume from the last successful step.
     "checkpoint_enabled": False,
+    # Per-call LLM result cache: skips LLM provider calls when the same
+    # prompt+model was already executed successfully.  Saves tokens on
+    # retries after network errors, rate-limiting, or process crashes.
+    "llm_cache_enabled": False,
+    # How long (in hours) cached LLM results stay valid before expiring.
+    "llm_cache_ttl_hours": 24,
+    # Market data cache: stores OHLCV, indicators, A-stock features, and fund
+    # flow results in per-ticker SQLite DBs so repeated chart loads skip third-
+    # party API calls.  Enabled by default (user requested persistent caching).
+    "data_cache_enabled": True,
+    # Default TTL in hours for cached data entries.  Per-type logic may override
+    # this at runtime (e.g. OHLCV always uses 24h regardless of this setting).
+    "data_cache_ttl_hours": 24,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
