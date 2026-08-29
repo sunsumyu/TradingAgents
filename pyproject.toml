@@ -55,6 +55,11 @@ gui = [
 astock = [
     "akshare>=1.16.0",
 ]
+# Backtesting engine (akquant Rust core + akshare data). Install with: pip install "tradingagents[backtest]"
+backtest = [
+    "akquant>=0.1.0",
+    "akshare>=1.16.0",
+]
 
 [project.scripts]
 tradingagents = "cli.main:app"

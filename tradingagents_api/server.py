@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .routers import (
     analysis,
     astock,
+    backtest,
     cache,
     config,
     health,
@@ -59,6 +60,7 @@ for _router in (
     analysis,
     market,
     astock,
+    backtest,
     screener,
     portfolio,
     realtime,

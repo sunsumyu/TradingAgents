@@ -184,6 +184,35 @@ class TradingAgentsGraph:
         """Process a signal to extract the core decision."""
         return self.signal_processor.process_signal(full_signal)
 
+    def backtest(
+        self,
+        final_state: dict,
+        ticker: str,
+        holding_days: int = 5,
+        initial_cash: float = 100_000.0,
+    ):
+        """Run a backtest using the Agent's trade decision.
+
+        Converts the ``final_trade_decision`` from *final_state* into an
+        akquant strategy and backtests it against historical data.
+
+        Requires akquant: ``pip install akquant``.
+
+        Returns:
+            A ``BacktestResult`` with performance metrics and report path.
+        """
+        from tradingagents.backtesting.engine import BacktestEngine
+        from tradingagents.backtesting.report import save_backtest_report
+
+        engine = BacktestEngine(self.config)
+        result = engine.run_from_decision(
+            final_state, ticker, holding_days, initial_cash,
+        )
+        # Save report
+        report_path = save_backtest_report(result, ticker, self.config)
+        result.report_path = str(report_path)
+        return result
+
     def _resolve_pending_entries(self, ticker: str) -> None:
         """Resolve pending log entries for ticker at the start of a new run.
 
