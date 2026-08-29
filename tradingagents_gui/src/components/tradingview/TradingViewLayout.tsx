@@ -282,7 +282,7 @@ export default function TradingViewLayout({
   // ── Price alerts ───────────────────────────────────────────────────────────
   const [showAlertPanel, setShowAlertPanel] = useState(false);
   const alertPanelRef = useRef<HTMLDivElement>(null);
-  const { alerts, addAlert, removeAlert, toggleAlert } = usePriceAlerts(realtimeQuotes);
+  const { alerts, addAlert, removeAlert, toggleAlert, updateAlert } = usePriceAlerts(realtimeQuotes);
 
   // Close alert panel on outside click
   useEffect(() => {
@@ -379,6 +379,7 @@ export default function TradingViewLayout({
               onAdd={addAlert}
               onRemove={removeAlert}
               onToggle={toggleAlert}
+              onUpdate={updateAlert}
               onClose={() => setShowAlertPanel(false)}
             />
           </div>

@@ -529,11 +529,18 @@ export interface PriceAlert {
   id: string;
   ticker: string;
   name?: string | null;
-  condition: "above" | "below";
+  /** Local conditions are "above"/"below"; server conditions
+   *  (price_above, indicator_above, cross_above, ...) round-trip
+   *  through sync and render as their raw value - never evaluated
+   *  locally by the price watcher. */
+  condition: "above" | "below" | (string & {});
   target_price: number;
   enabled: boolean;
   triggered?: boolean;   // true once the alert has fired
   created_at: string;    // ISO timestamp
+  /** Epoch seconds of the last semantic change - drives newer-wins
+   *  merge with the server (ticket #12). */
+  updated_at?: number;
 }
 
 export const ALERTS_STORAGE_KEY = "tradingagents_price_alerts";
