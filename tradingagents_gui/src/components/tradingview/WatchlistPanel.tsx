@@ -19,6 +19,8 @@ import { useRealtimePrices } from "../../lib/useRealtimePrices";
 import {
   loadWatchlistGroups,
   saveWatchlistGroups,
+  loadFromServer,
+  syncToServer,
 } from "./watchlist-store";
 
 // ── Props ───────────────────────────────────────────────────────────────────
@@ -38,9 +40,77 @@ export default function WatchlistPanel({ onSelect, currentTicker }: Props) {
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
+  const prevGroupsRef = useRef<WatchlistGroup[]>(groups);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipSyncRef = useRef(false);
 
+  // ── Server sync on mount ────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    loadFromServer(groups).then((merged) => {
+      if (!cancelled) {
+        skipSyncRef.current = true; // skip sync for server-originated change
+        setGroups(merged);
+        prevGroupsRef.current = merged;
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Save to localStorage + debounced server sync ────────────────────────
   useEffect(() => {
     saveWatchlistGroups(groups);
+
+    // Skip server sync for server-originated changes
+    if (skipSyncRef.current) {
+      skipSyncRef.current = false;
+      return;
+    }
+
+    // Compute deletions by diffing with previous state
+    const prev = prevGroupsRef.current;
+    const prevTickerSet = new Set(
+      prev.flatMap((g) => g.items.map((i) => `${g.id}:${i.ticker}`)),
+    );
+    const currTickerSet = new Set(
+      groups.flatMap((g) => g.items.map((i) => `${g.id}:${i.ticker}`)),
+    );
+    const deletedItems: { group_id: string; ticker: string }[] = [];
+    for (const key of prevTickerSet) {
+      if (!currTickerSet.has(key)) {
+        const [group_id, ticker] = key.split(":");
+        deletedItems.push({ group_id, ticker });
+      }
+    }
+    const prevGroupIds = new Set(prev.map((g) => g.id));
+    const currGroupIds = new Set(groups.map((g) => g.id));
+    const deletedGroupIds = [...prevGroupIds].filter((id) => !currGroupIds.has(id));
+
+    prevGroupsRef.current = groups;
+
+    // Debounce server sync (500ms)
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      syncToServer(groups, deletedGroupIds, deletedItems).then((result) => {
+        if (result) {
+          // Apply server-merged state back (handles cross-device changes)
+          const synced = result.groups.map((g) => ({
+            id: g.id,
+            name: g.name,
+            items: g.items,
+            collapsed: g.collapsed,
+          }));
+          skipSyncRef.current = true;
+          setGroups(synced);
+          prevGroupsRef.current = synced;
+        }
+      });
+    }, 500);
+
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
   }, [groups]);
 
   useEffect(() => {
