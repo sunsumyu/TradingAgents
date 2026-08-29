@@ -51,6 +51,10 @@ gui = [
     "granian>=2.0.0",
     "uvicorn>=0.30.0",
 ]
+# A-share data vendor (akshare). Install with: pip install "tradingagents[astock]"
+astock = [
+    "akshare>=1.16.0",
+]
 
 [project.scripts]
 tradingagents = "cli.main:app"

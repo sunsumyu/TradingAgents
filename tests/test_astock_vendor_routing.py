@@ -30,7 +30,7 @@ def test_a_stock_has_all_core_methods():
 
 
 def test_astock_signal_methods_exist():
-    """A-stock signal methods (only available via a_stock)."""
+    """A-stock signal methods (available via a_stock and akshare)."""
     signal_methods = [
         "get_profit_forecast",
         "get_hot_stocks",
@@ -44,8 +44,8 @@ def test_astock_signal_methods_exist():
     for method in signal_methods:
         assert method in VENDOR_METHODS, f"Missing VENDOR_METHODS for {method}"
         assert "a_stock" in VENDOR_METHODS[method], f"Missing a_stock for {method}"
-        # These should be a_stock-only
-        assert len(VENDOR_METHODS[method]) == 1
+        # a_stock + akshare both provide these signal methods
+        assert "akshare" in VENDOR_METHODS[method], f"Missing akshare for {method}"
 
 
 def test_signal_data_category_exists():

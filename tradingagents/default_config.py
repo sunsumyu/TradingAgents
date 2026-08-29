@@ -170,16 +170,19 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # routed to vendors you didn't choose. For ordered fallback, list several,
     # e.g. "yfinance,alpha_vantage". "default" uses all available vendors.
     "data_vendors": {
-        "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance
-        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
-        "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
-        "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+        "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance, a_stock, akshare
+        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance, a_stock, akshare
+        "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance, a_stock, akshare
+        "news_data": "yfinance",             # Options: alpha_vantage, yfinance, a_stock, akshare
         "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
         "prediction_markets": "polymarket",  # Options: polymarket (keyless)
+        # signal_data: use tool_vendors to set per-method, e.g.
+        #   "tool_vendors": {"get_profit_forecast": "akshare"}
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
         # Example: "get_stock_data": "alpha_vantage",  # Override category default
+        # Example: "get_profit_forecast": "akshare",   # Use akshare for A-share signals
     },
     # Benchmark for alpha calculation in the reflection layer.
     # ``benchmark_ticker`` (when set) overrides the suffix map for all
