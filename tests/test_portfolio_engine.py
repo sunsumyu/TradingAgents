@@ -275,3 +275,49 @@ class TestPositionModel:
         d = pos.to_dict()
         assert d["ticker"] == "600519"
         assert d["weight"] == 18.5
+
+
+class TestRestore:
+    """PortfolioEngine.restore — rebuild state from a persisted snapshot."""
+
+    def test_restore_roundtrip(self):
+        source = PortfolioEngine(initial_capital=1_000_000)
+        source.execute_trade("600519", "buy", 100, 1800.0, "贵州茅台", "测试")
+        source.execute_trade("000858", "buy", 200, 150.0, "五粮液")
+        source.execute_trade("000858", "sell", 50, 160.0)
+
+        restored = PortfolioEngine(initial_capital=1_000_000)
+        restored.restore(
+            cash=source._cash,
+            positions={t: dict(p) for t, p in source._positions.items()},
+            trades=list(source._trades),
+        )
+
+        assert restored._cash == source._cash
+        assert set(restored._positions) == set(source._positions)
+        assert restored._positions["600519"]["quantity"] == 100
+        assert restored._positions["600519"]["avg_cost"] == 1800.0
+        assert restored._positions["000858"]["quantity"] == 150
+        assert len(restored.get_history()) == 3
+
+    def test_restore_enables_performance(self):
+        source = PortfolioEngine(initial_capital=1_000_000)
+        source.execute_trade("600519", "buy", 100, 1800.0)
+        source.execute_trade("600519", "sell", 100, 1900.0)
+
+        restored = PortfolioEngine(initial_capital=1_000_000)
+        restored.restore(
+            cash=source._cash,
+            positions={},
+            trades=list(source.get_history()),
+        )
+        perf = restored.get_performance()
+        assert perf.total_trades == 1
+        assert perf.winning_trades == 1
+
+    def test_restore_empty(self):
+        engine = PortfolioEngine(initial_capital=500_000)
+        engine.restore(cash=500_000, positions={}, trades=[])
+        summary = engine.get_positions()
+        assert summary.cash == 500_000
+        assert summary.positions == []

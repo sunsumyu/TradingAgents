@@ -315,6 +315,30 @@ class PortfolioEngine:
         """Get complete trade history."""
         return list(self._trades)
 
+    def restore(
+        self,
+        cash: float,
+        positions: dict[str, dict],
+        trades: list[TradeRecord],
+    ) -> None:
+        """Restore engine state from a persisted snapshot.
+
+        Args:
+            cash: Current cash balance.
+            positions: {ticker: {"name", "quantity", "avg_cost", "current_price"}}.
+            trades: Previously executed trade records (chronological order).
+        """
+        self.reset()
+        self._cash = cash
+        for ticker, pos in positions.items():
+            self._positions[ticker] = {
+                "name": pos.get("name", ticker),
+                "quantity": pos["quantity"],
+                "avg_cost": pos["avg_cost"],
+                "current_price": pos["current_price"] if pos.get("current_price") is not None else pos["avg_cost"],
+            }
+        self._trades = list(trades)
+
     def reset(self) -> None:
         """Reset portfolio to initial state."""
         self._cash = self._initial_capital
