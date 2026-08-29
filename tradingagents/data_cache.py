@@ -250,7 +250,7 @@ def _get_config() -> tuple[bool, str]:
     global _default_cache_enabled, _default_cache_dir
     if _default_cache_enabled is None:
         try:
-            from tradingagents.default_config import get_config
+            from tradingagents.dataflows.config import get_config
             cfg = get_config()
             _default_cache_enabled = cfg.get("data_cache_enabled", True)
             _default_cache_dir = cfg.get("data_cache_dir", "")

@@ -135,8 +135,9 @@ SCREENER_USER_PROMPT = """\
 def _parse_query_with_llm(query: str, config: dict[str, Any]) -> ScreenerCriteria:
     """Use the quick LLM to translate NL query → structured filters."""
     from tradingagents.llm_clients.factory import create_quick_llm
+    from tradingagents.agents.utils.cached_llm import CachedLLM
 
-    llm = create_quick_llm(config)
+    llm = CachedLLM(create_quick_llm(config))
     prompt = SCREENER_USER_PROMPT.format(query=query)
 
     try:

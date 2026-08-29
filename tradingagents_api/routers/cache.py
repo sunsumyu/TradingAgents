@@ -23,7 +23,7 @@ async def clear_data_cache(request: CacheClearRequest):
     If *data_type* is provided, only entries of that type are removed.
     If neither is provided, ALL cached data is cleared.
     """
-    from tradingagents.default_config import get_config
+    from tradingagents.dataflows.config import get_config
 
     config = get_config()
     data_dir = config.get("data_cache_dir", "")
@@ -58,7 +58,7 @@ async def clear_data_cache(request: CacheClearRequest):
 @router.get("/api/cache/stats")
 async def get_cache_stats():
     """Return data cache statistics across all cached tickers."""
-    from tradingagents.default_config import get_config
+    from tradingagents.dataflows.config import get_config
 
     config = get_config()
     data_dir = config.get("data_cache_dir", "")
