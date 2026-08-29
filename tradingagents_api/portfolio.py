@@ -112,6 +112,10 @@ class PortfolioResponse(BaseModel):
     total_pnl: float = 0
     total_pnl_pct: float = 0
     performance: PortfolioPerformance | None = None
+    commission: float | None = Field(
+        default=None,
+        description="最近一笔交易的佣金（仅下单响应携带；查询响应为 null）",
+    )
 
 
 # ── Storage ──────────────────────────────────────────────────────────────────
@@ -276,15 +280,27 @@ def execute_trade(
         )
 
     # The engine owns the math (cash movement, average cost, commission).
+    # If the engine still rejects (e.g. commission pushed the cost over the
+    # cash line after the legacy pre-check passed), keep the Chinese contract.
     engine = _build_engine(p)
-    trade = engine.execute_trade(
-        ticker=ticker,
-        side=action,
-        quantity=quantity,
-        price=price,
-        name=name,
-        reason=reason,
-    )
+    try:
+        trade = engine.execute_trade(
+            ticker=ticker,
+            side=action,
+            quantity=quantity,
+            price=price,
+            name=name,
+            reason=reason,
+        )
+    except ValueError as exc:
+        if action == "buy":
+            raise ValueError(
+                f"现金不足：需要 ¥{total_cost:,.2f}，当前可用 ¥{p.cash:,.2f}"
+            ) from exc
+        avail = existing.quantity if existing else 0
+        raise ValueError(
+            f"持仓不足：{ticker} 可卖 {avail} 股，请求卖出 {quantity} 股"
+        ) from exc
 
     # Sync the snapshot from engine state.
     p.cash = engine._cash
@@ -318,7 +334,9 @@ def execute_trade(
     p.nav_history.append({"date": today, "nav": round(nav, 2)})
 
     _save_portfolio(p)
-    return get_portfolio()
+    response = get_portfolio()
+    response.commission = trade.commission  # Only carried on the trade response
+    return response
 
 
 def get_trade_history() -> list[TradeRecord]:

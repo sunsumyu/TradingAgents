@@ -346,9 +346,11 @@ class SignalEngine:
                         should_trigger = was_above and not is_above
             # Unknown conditions: never trigger silently
 
-            # Update the cross-detection baseline every check
-            alert.last_price = price
+            # Update the cross-detection baseline. Both sides must come from
+            # the same check — pairing a fresh price with a stale indicator
+            # baseline (or vice versa) could fire a spurious cross.
             if ind_value is not None:
+                alert.last_price = price
                 alert.last_indicator_value = ind_value
 
             if should_trigger:

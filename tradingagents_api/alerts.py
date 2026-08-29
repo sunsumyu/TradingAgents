@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -186,7 +187,7 @@ def create_alert(
 
     conn = _connect()
     try:
-        alert_id = __import__("uuid").uuid4().hex[:8]
+        alert_id = uuid.uuid4().hex[:8]
         now = time.time()
         conn.execute(
             "INSERT INTO alerts (id, ticker, condition, threshold, indicator,"
@@ -259,20 +260,26 @@ def check_alerts(
     price: float,
     volume: float = 0,
     indicator_values: dict[str, float] | None = None,
-) -> list[AlertOut]:
+) -> tuple[list[AlertOut], list[str]]:
     """Evaluate all armed alerts for *ticker* against the latest quote.
 
     Alert evaluation runs through the signal engine; baselines
     (last_price / last_indicator_value) round-trip through the store so
     cross detection survives process restarts and stateless workers.
+
+    Returns:
+        (triggered alerts, ids of indicator-condition alerts that could not
+        be evaluated because their indicator value was not supplied — they
+        stay armed, but the caller is told explicitly).
     """
+    indicator_values = indicator_values or {}
     conn = _connect()
     try:
         rows = conn.execute(
             "SELECT * FROM alerts WHERE ticker = ?", (ticker,)
         ).fetchall()
         if not rows:
-            return []
+            return [], []
 
         engine = SignalEngine()
         engine.restore_alerts([_row_to_alert(row) for row in rows])
@@ -313,6 +320,16 @@ def check_alerts(
             )
         conn.commit()
 
-        return [_alert_to_out(a) for a in triggered]
+        unevaluated = [
+            alert.id
+            for alert in engine._alerts.values()
+            if alert.enabled and not alert.triggered
+            and alert.condition in (AlertCondition.INDICATOR_ABOVE,
+                                    AlertCondition.INDICATOR_BELOW,
+                                    AlertCondition.CROSS_ABOVE,
+                                    AlertCondition.CROSS_BELOW)
+            and indicator_values.get(alert.indicator) is None
+        ]
+        return [_alert_to_out(a) for a in triggered], unevaluated
     finally:
         conn.close()

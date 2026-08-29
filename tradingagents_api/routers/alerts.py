@@ -89,13 +89,17 @@ async def post_check(request: AlertCheckRequest):
     current indicator readings via ``indicator_values``.
     """
     try:
-        triggered = check_alerts(
+        triggered, unevaluated = check_alerts(
             ticker=request.ticker,
             price=request.price,
             volume=request.volume,
             indicator_values=request.indicator_values,
         )
-        return {"ticker": request.ticker, "triggered": triggered}
+        return {
+            "ticker": request.ticker,
+            "triggered": triggered,
+            "unevaluated": unevaluated,
+        }
     except Exception as exc:
         logger.error("Alert check failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))

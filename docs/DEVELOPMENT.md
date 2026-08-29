@@ -103,14 +103,14 @@ TradingAgents/
 │   ├── backtesting/                  #   akquant 回测封装（engine/strategy/report）
 │   └── markets/                      #   市场类型检测（detector）
 ├── tradingagents_api/                # FastAPI 服务层
-│   ├── server.py                     #   app 装配（CORS + 11 个 router）
+│   ├── server.py                     #   app 装配（CORS + 12 个 router）
 │   ├── runner/                       #   分析任务生命周期（task_state/config_builder/graph_runner/progress/report_builder）
 │   ├── chart_data/                   #   图表数据管线（fetchers/computors/parsers）
 │   ├── astock_features.py            #   A股特色功能 FEATURE_TABLE（13 项分发）
 │   ├── screener.py / portfolio.py    #   选股/组合 HTTP 服务层（独立实现，见 §4.7）
 │   ├── market_data.py                #   分析前市场数据包
 │   ├── schemas.py                    #   全部 Pydantic 模型
-│   └── routers/                      #   analysis/ market/ astock/ backtest/ screener/ portfolio/ realtime/ providers/ config/ cache/ health
+│   └── routers/                      #   analysis/ market/ astock/ backtest/ screener/ portfolio/ alerts/ realtime/ providers/ config/ cache/ health
 ├── tradingagents_gui/                # 前端（React 18 + Zustand + ECharts 6 + Tauri 2）
 │   ├── src/App.tsx                   #   阶段状态机（无路由库）
 │   ├── src/stores/                   #   全局 store（analysis / config / marketData）
@@ -302,9 +302,9 @@ POST /api/chart-data {ticker, date, days=90, interval?}
 
 结果经 `cached_fetch_raw` 缓存；`is_astock_code()` 判定：剥后缀/前缀后恰好 6 位数字。
 
-### 4.7 HTTP 服务层的选股/组合（历史实现，与引擎模块并存 ⚠️）
+### 4.7 HTTP 服务层的选股/组合（已迁移到引擎模块 ✅）
 
-**重要架构事实**：`tradingagents_api/screener.py` 和 `portfolio.py` 是**自包含的历史实现**，**没有** import `screener_engine` / `portfolio_engine`（两套并存）：
+**架构事实（Phase 6 工单 #2/#3 迁移后）**：两个服务层的交易/比较计算已统一走引擎模块——组合服务经 `PortfolioEngine.restore()` 重建状态（零佣金默认保持旧算术，可用 `TRADINGAGENTS_PORTFOLIO_COMMISSION_RATE` 开启）；选股服务经 `ScreenerEngine.evaluate_row()` 求值（唯一比较实现），LLM 解析/候选发现/部分匹配评分公式留在服务层。工单 #4 新增的预警服务（`alerts.py`）为用户级单 SQLite 库（WAL，`alert_events` 触发历史），求值走 `SignalEngine`。此前"两套并行实现"的问题已消除：
 
 | | API 服务层（现网使用） | 引擎模块（新，见 §4.8） |
 |---|---|---|
@@ -314,7 +314,7 @@ POST /api/chart-data {ticker, date, days=90, interval?}
 - **选股 LLM 解析**：`CachedLLM(create_quick_llm(config))` + 中文系统提示词 → 结构化 `ScreenerCriteria`；`ticker_hint`（合法A股代码）跳过发现直接分析单只。
 - **组合交易路由**：`POST /api/portfolio/trade` → `execute_trade`（买入现金校验+加权成本；卖出持仓校验+清零删除）。
 
-> **重构方向**：HTTP 层应逐步迁移到底层引擎模块（组合迁移收益最大——获得绩效分析与佣金模型；选股需先统一字段口径）。
+> 已完成迁移（Phase 6 #2/#3/#4）；遗留差异：选股三个翻译字段名（chip_profit_ratio / dragon_tiger_net_buy / concept_blocks）尚未进 `SCREEN_FIELDS` 50 字段清单，属后续增量。
 
 ### 4.8 五大引擎模块 + 回测（`tradingagents/*_engine/`, `backtesting/`）
 

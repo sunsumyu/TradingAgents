@@ -107,6 +107,14 @@ class TestLegacyContract:
 
 
 class TestNewOptionalFields:
+    def test_trade_response_carries_commission(self, client):
+        resp = client.post("/api/portfolio/trade", json={
+            "ticker": "600519", "action": "buy", "quantity": 100, "price": 1500.0,
+        })
+        assert resp.json()["commission"] == 0.0
+        # Query responses leave it null
+        assert client.get("/api/portfolio").json()["commission"] is None
+
     def test_trade_record_has_commission_field(self, client):
         client.post("/api/portfolio/trade", json={
             "ticker": "600519", "action": "buy", "quantity": 100, "price": 1500.0,

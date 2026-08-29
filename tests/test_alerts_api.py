@@ -135,6 +135,26 @@ class TestAlertChecking:
         assert len(hit["triggered"]) == 1
         assert hit["triggered"][0]["indicator"] == "RSI"
 
+    def test_missing_indicator_values_reported_explicitly(self, client):
+        """Indicator conditions without values are surfaced as
+        'unevaluated' (explicit) instead of failing silently."""
+        client.post("/api/alerts", json={
+            "ticker": "600519", "condition": "indicator_below",
+            "threshold": 30.0, "indicator": "RSI",
+        })
+        result = client.post("/api/alerts/check",
+                             json={"ticker": "600519", "price": 1800.0}).json()
+        assert result["triggered"] == []
+        assert len(result["unevaluated"]) == 1
+
+        # Once values arrive, the alert evaluates normally
+        result = client.post("/api/alerts/check", json={
+            "ticker": "600519", "price": 1800.0,
+            "indicator_values": {"RSI": 25.0},
+        }).json()
+        assert len(result["triggered"]) == 1
+        assert result["unevaluated"] == []
+
     def test_cross_above_arms_then_triggers_across_calls(self, client):
         """Cross detection works across separate stateless check calls —
         baselines round-trip through the store."""

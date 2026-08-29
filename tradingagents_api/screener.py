@@ -539,6 +539,22 @@ def run_screener(
     )
 
 
+def _json_safe(value: Any) -> Any:
+    """Convert pandas/numpy values (Timestamp, NaN, numpy scalars) into
+    JSON-serializable primitives before they reach the response envelope."""
+    import math
+
+    if value is None or isinstance(value, (str, bool, int, float)):
+        if isinstance(value, float) and math.isnan(value):
+            return None
+        return value
+    if hasattr(value, "isoformat"):  # pandas Timestamp / datetime
+        return value.isoformat()
+    if hasattr(value, "item"):  # numpy scalar
+        return _json_safe(value.item())
+    return str(value)
+
+
 def run_template_screener(
     template_id: str,
     max_results: int = 20,
@@ -571,7 +587,8 @@ def run_template_screener(
             pe=r.data.get("pe_ratio"),
             score=round(r.score, 1),
             match_details={"matched_filters": r.matched_filters, "data": {
-                k: v for k, v in r.data.items() if not str(k).startswith("_")
+                k: _json_safe(v) for k, v in r.data.items()
+                if not str(k).startswith("_")
             }},
         )
         for r in engine_results
