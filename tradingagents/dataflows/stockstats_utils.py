@@ -173,9 +173,9 @@ def load_ohlcv(symbol: str, curr_date: str) -> pd.DataFrame:
         symbol = _fixed
 
     if detect_market_type(symbol) == "astock":
-        from tradingagents.dataflows.a_stock import _load_ohlcv_astock
+        from tradingagents.dataflows.a_stock import load_ohlcv_astock
 
-        return _load_ohlcv_astock(symbol, curr_date)
+        return load_ohlcv_astock(symbol, curr_date)
 
     config = get_config()
     curr_date_dt = pd.to_datetime(curr_date)

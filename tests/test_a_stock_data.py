@@ -25,19 +25,19 @@ def test_a_stock_module_importable():
 
 
 def test_normalize_ticker():
-    from tradingagents.dataflows.a_stock import _normalize_ticker
+    from tradingagents.dataflows.a_stock import normalize_ticker
 
-    assert _normalize_ticker("600519.SS") == "600519"
-    assert _normalize_ticker("000001.SZ") == "000001"
-    assert _normalize_ticker("sh600519") == "600519"
-    assert _normalize_ticker("600519") == "600519"
+    assert normalize_ticker("600519.SS") == "600519"
+    assert normalize_ticker("000001.SZ") == "000001"
+    assert normalize_ticker("sh600519") == "600519"
+    assert normalize_ticker("600519") == "600519"
 
 
 def test_reject_non_a_share():
-    from tradingagents.dataflows.a_stock import _reject_non_a_share
+    from tradingagents.dataflows.a_stock import reject_non_a_share
 
     # Should raise ValueError for non-A-share codes
     with pytest.raises(ValueError):
-        _reject_non_a_share("get_stock_data", "NVDA")
+        reject_non_a_share("get_stock_data", "NVDA")
     with pytest.raises(ValueError):
-        _reject_non_a_share("get_stock_data", "0700.HK")
+        reject_non_a_share("get_stock_data", "0700.HK")

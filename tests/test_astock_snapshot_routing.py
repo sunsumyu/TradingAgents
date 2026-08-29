@@ -32,7 +32,7 @@ class TestLoadOhlcvAstockRouting:
     def test_astock_routes_to_astock_loader_not_yahoo(self):
         with mock.patch.object(ss_utils, "yf") as mock_yf, \
                 mock.patch(
-                    "tradingagents.dataflows.a_stock._load_ohlcv_astock",
+                    "tradingagents.dataflows.a_stock.load_ohlcv_astock",
                     return_value=_astock_frame(),
                 ) as mock_astock:
             df = ss_utils.load_ohlcv("600733", "2026-08-16")
@@ -43,7 +43,7 @@ class TestLoadOhlcvAstockRouting:
     def test_astock_with_suffix_routes_to_astock_loader(self):
         with mock.patch.object(ss_utils, "yf") as mock_yf, \
                 mock.patch(
-                    "tradingagents.dataflows.a_stock._load_ohlcv_astock",
+                    "tradingagents.dataflows.a_stock.load_ohlcv_astock",
                     return_value=_astock_frame(),
                 ):
             ss_utils.load_ohlcv("600733.SS", "2026-08-16")
@@ -58,7 +58,7 @@ class TestLoadOhlcvAstockRouting:
             "Close": [1.05, 0.95], "Volume": [1000, 900],
         })
         with mock.patch.object(ss_utils.yf, "download", return_value=frame), \
-                mock.patch("tradingagents.dataflows.a_stock._load_ohlcv_astock") as mock_astock:
+                mock.patch("tradingagents.dataflows.a_stock.load_ohlcv_astock") as mock_astock:
             ss_utils.load_ohlcv("NVDA", "2026-08-16")
         mock_astock.assert_not_called()
 
@@ -66,7 +66,7 @@ class TestLoadOhlcvAstockRouting:
 @pytest.mark.unit
 class TestSnapshotAstockRouting:
     def test_snapshot_builder_uses_astock_loader(self, monkeypatch):
-        from tradingagents.dataflows.a_stock import _load_ohlcv_astock
+        from tradingagents.dataflows.a_stock import load_ohlcv_astock
 
         monkeypatch.setattr(
             validator, "load_ohlcv", lambda s, d: _astock_frame()
