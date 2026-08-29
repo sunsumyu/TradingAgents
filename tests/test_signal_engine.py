@@ -150,6 +150,91 @@ class TestSignalEngine:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
+class TestAlertConditionsComplete:
+    """All 7 AlertCondition types are evaluable (ticket #4)."""
+
+    def test_indicator_above_triggers(self, signal_engine):
+        signal_engine.add_alert(
+            "600519", AlertCondition.INDICATOR_BELOW, 30.0, indicator="RSI"
+        )
+        triggered = signal_engine.check_alerts(
+            "600519", 1800.0, indicator_values={"RSI": 25.0}
+        )
+        assert len(triggered) == 1
+        assert triggered[0].condition == AlertCondition.INDICATOR_BELOW
+
+    def test_indicator_above_no_trigger(self, signal_engine):
+        signal_engine.add_alert(
+            "600519", AlertCondition.INDICATOR_ABOVE, 80.0, indicator="RSI"
+        )
+        triggered = signal_engine.check_alerts(
+            "600519", 1800.0, indicator_values={"RSI": 55.0}
+        )
+        assert triggered == []
+
+    def test_indicator_missing_value_skips(self, signal_engine):
+        """No indicator data -> skip silently, alert stays armed."""
+        alert = signal_engine.add_alert(
+            "600519", AlertCondition.INDICATOR_ABOVE, 80.0, indicator="RSI"
+        )
+        triggered = signal_engine.check_alerts("600519", 1800.0, indicator_values=None)
+        assert triggered == []
+        assert alert.triggered is False
+        # And still triggers once the value arrives
+        triggered = signal_engine.check_alerts(
+            "600519", 1800.0, indicator_values={"RSI": 85.0}
+        )
+        assert len(triggered) == 1
+
+    def test_cross_above_arms_then_triggers(self, signal_engine):
+        """First check arms the baseline; a genuine upward cross triggers."""
+        signal_engine.add_alert(
+            "600519", AlertCondition.CROSS_ABOVE, 0.0, indicator="MA20"
+        )
+        # Below the line: baseline stored, no trigger
+        assert signal_engine.check_alerts(
+            "600519", 1750.0, indicator_values={"MA20": 1800.0}
+        ) == []
+        # Still below: no trigger
+        assert signal_engine.check_alerts(
+            "600519", 1790.0, indicator_values={"MA20": 1800.0}
+        ) == []
+        # Cross above: trigger
+        triggered = signal_engine.check_alerts(
+            "600519", 1815.0, indicator_values={"MA20": 1800.0}
+        )
+        assert len(triggered) == 1
+        assert triggered[0].condition == AlertCondition.CROSS_ABOVE
+
+    def test_cross_below_triggers(self, signal_engine):
+        signal_engine.add_alert(
+            "600519", AlertCondition.CROSS_BELOW, 0.0, indicator="MA20"
+        )
+        signal_engine.check_alerts("600519", 1850.0, indicator_values={"MA20": 1800.0})
+        triggered = signal_engine.check_alerts(
+            "600519", 1780.0, indicator_values={"MA20": 1800.0}
+        )
+        assert len(triggered) == 1
+        assert triggered[0].condition == AlertCondition.CROSS_BELOW
+
+    def test_disabled_alert_skipped(self, signal_engine):
+        alert = signal_engine.add_alert("600519", AlertCondition.PRICE_ABOVE, 1800.0)
+        signal_engine.set_alert_enabled(alert.id, False)
+        assert signal_engine.check_alerts("600519", 1900.0) == []
+        signal_engine.set_alert_enabled(alert.id, True)
+        assert len(signal_engine.check_alerts("600519", 1900.0)) == 1
+
+    def test_alert_to_dict(self, signal_engine):
+        alert = signal_engine.add_alert(
+            "600519", AlertCondition.INDICATOR_BELOW, 30.0,
+            indicator="RSI", message="超卖",
+        )
+        d = alert.to_dict()
+        assert d["condition"] == "indicator_below"
+        assert d["indicator"] == "RSI"
+        assert d["enabled"] is True
+
+
 class TestAlerts:
     def test_add_alert(self, signal_engine):
         alert = signal_engine.add_alert(

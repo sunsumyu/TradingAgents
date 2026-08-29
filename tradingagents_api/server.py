@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import (
+    alerts,
     analysis,
     astock,
     backtest,
@@ -57,6 +58,7 @@ app.add_middleware(
 for _router in (
     health,
     providers,
+    alerts,
     analysis,
     market,
     astock,

@@ -288,24 +288,40 @@ class SignalEngine:
         ticker: str,
         price: float,
         volume: float = 0,
+        indicator_values: dict[str, float] | None = None,
     ) -> list[Alert]:
         """Check if any alerts should be triggered.
+
+        All 7 condition types are evaluable:
+        price_above / price_below / volume_above use the arguments directly;
+        indicator_above / below and cross_above / below need the current
+        indicator value(s) via *indicator_values* — when the value for an
+        alert's indicator is missing, that alert is skipped (stays armed).
 
         Args:
             ticker: Stock ticker.
             price: Current price.
             volume: Current volume.
+            indicator_values: Current indicator readings, e.g. {"RSI": 25.0}.
 
         Returns:
             List of newly triggered alerts.
         """
+        import time
+
+        indicator_values = indicator_values or {}
         triggered: list[Alert] = []
 
         for alert in self._alerts.values():
-            if alert.ticker != ticker or alert.triggered:
+            if alert.ticker != ticker or alert.triggered or not alert.enabled:
                 continue
 
             should_trigger = False
+            ind_value = (
+                indicator_values.get(alert.indicator)
+                if alert.indicator
+                else None
+            )
 
             if alert.condition == AlertCondition.PRICE_ABOVE and price >= alert.threshold:
                 should_trigger = True
@@ -313,9 +329,29 @@ class SignalEngine:
                 should_trigger = True
             elif alert.condition == AlertCondition.VOLUME_ABOVE and volume >= alert.threshold:
                 should_trigger = True
+            elif alert.condition == AlertCondition.INDICATOR_ABOVE:
+                should_trigger = ind_value is not None and ind_value >= alert.threshold
+            elif alert.condition == AlertCondition.INDICATOR_BELOW:
+                should_trigger = ind_value is not None and ind_value <= alert.threshold
+            elif alert.condition in (AlertCondition.CROSS_ABOVE, AlertCondition.CROSS_BELOW):
+                # Needs both sides of the comparison: the indicator line now
+                # and the previous check's price/line baseline.
+                if ind_value is not None and alert.last_price is not None \
+                        and alert.last_indicator_value is not None:
+                    was_above = alert.last_price >= alert.last_indicator_value
+                    is_above = price >= ind_value
+                    if alert.condition == AlertCondition.CROSS_ABOVE:
+                        should_trigger = not was_above and is_above
+                    else:
+                        should_trigger = was_above and not is_above
+            # Unknown conditions: never trigger silently
+
+            # Update the cross-detection baseline every check
+            alert.last_price = price
+            if ind_value is not None:
+                alert.last_indicator_value = ind_value
 
             if should_trigger:
-                import time
                 alert.triggered = True
                 alert.triggered_at = time.time()
                 triggered.append(alert)
@@ -330,6 +366,8 @@ class SignalEngine:
         condition: AlertCondition,
         threshold: float,
         message: str = "",
+        indicator: str | None = None,
+        enabled: bool = True,
     ) -> Alert:
         """Create a new alert."""
         import time
@@ -338,11 +376,26 @@ class SignalEngine:
             ticker=ticker,
             condition=condition,
             threshold=threshold,
+            indicator=indicator,
             message=message,
+            enabled=enabled,
             created_at=time.time(),
         )
         self._alerts[alert.id] = alert
         return alert
+
+    def restore_alerts(self, alerts: list[Alert]) -> None:
+        """Load persisted alerts (including cross-detection baselines)."""
+        for alert in alerts:
+            self._alerts[alert.id] = alert
+
+    def set_alert_enabled(self, alert_id: str, enabled: bool) -> bool:
+        """Enable or disable an alert without deleting it. Returns True if found."""
+        alert = self._alerts.get(alert_id)
+        if alert is None:
+            return False
+        alert.enabled = enabled
+        return True
 
     def remove_alert(self, alert_id: str) -> bool:
         """Remove an alert by ID."""

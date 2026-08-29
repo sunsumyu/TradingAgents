@@ -111,3 +111,20 @@ class Alert:
     triggered: bool = False
     created_at: float = 0.0
     triggered_at: float | None = None
+    enabled: bool = True
+    last_price: float | None = None  # Cross-detection baseline
+    last_indicator_value: float | None = None  # Cross-detection baseline
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "ticker": self.ticker,
+            "condition": self.condition.value,
+            "threshold": self.threshold,
+            "indicator": self.indicator,
+            "message": self.message,
+            "triggered": self.triggered,
+            "created_at": self.created_at,
+            "triggered_at": self.triggered_at,
+            "enabled": self.enabled,
+        }

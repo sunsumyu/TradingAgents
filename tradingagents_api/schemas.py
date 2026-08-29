@@ -329,6 +329,31 @@ class ConfigSaveRequest(BaseModel):
     config: dict[str, Any]
 
 
+class AlertCreateRequest(BaseModel):
+    """Request body for creating an alert rule."""
+
+    ticker: str
+    condition: str  # one of the AlertCondition values
+    threshold: float = 0
+    indicator: str | None = None
+    message: str = ""
+
+
+class AlertEnabledRequest(BaseModel):
+    """Request body for enabling/disabling an alert."""
+
+    enabled: bool
+
+
+class AlertCheckRequest(BaseModel):
+    """Request body for evaluating armed alerts against the latest quote."""
+
+    ticker: str
+    price: float
+    volume: float = 0
+    indicator_values: dict[str, float] | None = None
+
+
 class CacheClearRequest(BaseModel):
     """Request body for clearing the data cache."""
 
