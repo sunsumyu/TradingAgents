@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ArrowDown,
   Download,
+  FlaskConical,
   RefreshCw,
   Search,
   X,
@@ -17,9 +18,11 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { SignalBadge } from "./ui";
 import { HighlightedText } from "./SmartHighlight";
+import BacktestSection from "./BacktestSection";
 import TradingViewLayout from "./tradingview/TradingViewLayout";
 import { buildExportHtml } from "../lib/html-export";
 import { useAnalysisStore } from "../stores/useAnalysisStore";
+import { useConfigStore } from "../stores/useConfigStore";
 
 // ── Tab definitions ─────────────────────────────────────────────────────────────
 
@@ -343,6 +346,7 @@ function SaveDropdown({
 export default function ReportPanel() {
   const report = useAnalysisStore((s) => s.report);
   const navigateTo = useAnalysisStore((s) => s.navigateTo);
+  const analysisDate = useConfigStore((s) => s.config.date);
   const ticker = report?.ticker ?? "";
   const signal = report?.signal ?? "";
   const reportMd = report?.report_md ?? "";
@@ -353,6 +357,7 @@ export default function ReportPanel() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSaveMenu, setShowSaveMenu] = useState(false);
+  const [showBacktest, setShowBacktest] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -482,6 +487,14 @@ export default function ReportPanel() {
             <RefreshCw size={13} />
             重新分析
           </button>
+          <button
+            className={`btn-ghost ${showBacktest ? "text-accent" : ""}`}
+            onClick={() => setShowBacktest(!showBacktest)}
+            title="回测当前决策"
+          >
+            <FlaskConical size={13} />
+            回测此决策
+          </button>
         </div>
       </div>
 
@@ -506,6 +519,16 @@ export default function ReportPanel() {
           </button>
         </div>
       </div>
+
+      {/* ── Backtest section (conditional) ── */}
+      {showBacktest && (
+        <BacktestSection
+          ticker={ticker}
+          signal={signal}
+          analysisDate={analysisDate}
+          onClose={() => setShowBacktest(false)}
+        />
+      )}
 
       {/* ── Search bar (conditional) ── */}
       {showSearch && (

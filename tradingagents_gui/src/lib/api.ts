@@ -3,6 +3,8 @@ import type {
   AnalyzeRequest,
   AnalyzeResponse,
   AstockFeatureEnvelope,
+  BacktestRequest,
+  BacktestResponse,
   ModelInfo,
   NavPoint,
   PortfolioResponse,
@@ -372,6 +374,28 @@ export const api = {
     });
     if (!resp.ok) {
       let detail = `Screener request failed: ${resp.status}`;
+      try {
+        const body = await resp.json();
+        detail = body.detail ?? detail;
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(detail);
+    }
+    return resp.json();
+  },
+
+  /** POST /api/backtest - backtest the report's trade decision (ticket #6).
+   *  503 carries the akquant install guidance in `detail`. */
+  async runBacktest(req: BacktestRequest, signal?: AbortSignal): Promise<BacktestResponse> {
+    const resp = await fetch(`${BASE_URL}/api/backtest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+      signal,
+    });
+    if (!resp.ok) {
+      let detail = `回测请求失败: HTTP ${resp.status}`;
       try {
         const body = await resp.json();
         detail = body.detail ?? detail;

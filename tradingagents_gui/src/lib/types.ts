@@ -62,6 +62,44 @@ export interface ReportResponse {
   chart_data?: ChartData | null;
 }
 
+// ── Backtest types (mirrors tradingagents_api/routers/backtest.py) ───────────
+
+/** One point on the backtest equity curve. */
+export interface EquityPoint {
+  date: string;   // YYYY-MM-DD
+  value: number;  // account equity
+}
+
+/** POST /api/backtest response. */
+export interface BacktestResponse {
+  ticker: string;
+  decision: string;
+  total_return: number | null;
+  annual_return: number | null;
+  sharpe_ratio: number | null;
+  max_drawdown: number | null;
+  win_rate: number | null;
+  total_trades: number;
+  profit_trades: number;
+  loss_trades: number;
+  initial_cash: number;
+  final_value: number | null;
+  holding_days: number;
+  equity_curve: EquityPoint[];
+  report_path?: string | null;
+  report_markdown?: string | null;
+}
+
+/** POST /api/backtest request. */
+export interface BacktestRequest {
+  ticker: string;
+  start_date: string;
+  end_date: string;
+  decision: string;
+  holding_days: number;
+  initial_cash?: number;
+}
+
 // ── Chart visualization types (mirrors tradingagents_api/schemas.py) ──────────
 
 export interface KlineData {
