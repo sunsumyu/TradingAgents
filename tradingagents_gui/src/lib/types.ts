@@ -38,6 +38,7 @@ export interface AnalyzeRequest {
   quick_think_llm: string;
   api_key?: string | null;
   backend_url?: string | null;
+  resume?: boolean;
 }
 
 export interface AnalyzeResponse {
@@ -162,6 +163,14 @@ export interface ModelInfo {
   id: string;
 }
 
+/** Realtime quote for a single ticker (watchlist polling). */
+export interface RealtimePrice {
+  price: number;
+  change: number;
+  changePct: number;
+  name?: string | null;
+}
+
 export interface StreamingToken {
   agent: string;
   token: string;
@@ -244,13 +253,9 @@ export const ANALYST_OPTIONS: [string, string][] = [
   ["fundamentals", "Fundamentals Analyst"],
 ];
 
-/** Get the latest trading date (skip weekends, default to Friday for weekends) */
+/** Get today's date in YYYY-MM-DD format (local timezone) */
 export function latestTradingDate(): string {
   const d = new Date();
-  const day = d.getDay(); // 0=Sun, 6=Sat
-  if (day === 0) d.setDate(d.getDate() - 2); // Sunday → Friday
-  else if (day === 6) d.setDate(d.getDate() - 1); // Saturday → Friday
-  // Use local timezone, not UTC (toISOString() would shift by timezone offset)
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
@@ -362,6 +367,245 @@ export function addTickerToHistory(ticker: string) {
   if (!upper) return;
   const history = getTickerHistory().filter((t) => t !== upper);
   history.unshift(upper);
-  if (history.length > TICKER_HISTORY_MAX) history.length = TICKER_HISTORY_MAX;
-  localStorage.setItem(TICKER_HISTORY_KEY, JSON.stringify(history));
+    if (history.length > TICKER_HISTORY_MAX) history.length = TICKER_HISTORY_MAX;
+    localStorage.setItem(TICKER_HISTORY_KEY, JSON.stringify(history));
+}
+
+// ── A-stock data center types (Phase 5) ─────────────────────────────────────
+
+export interface AstockFeatureEnvelope<T = Record<string, unknown>> {
+  feature: string;
+  ticker: string;
+  date: string;
+  data: T;
+  raw_md: string;
+}
+
+export interface PriceLevelChip {
+  price: number;
+  ratio: number;
+  is_peak: boolean;
+}
+
+export interface ChipDistributionData {
+  price_levels: PriceLevelChip[];
+  current_price?: number | null;
+  profit_ratio?: number | null;
+  avg_cost?: number | null;
+  peak_price?: number | null;
+}
+
+export interface DragonTigerSeat {
+  name: string;
+  side: "buy" | "sell";
+  buy_wan: number;
+  sell_wan: number;
+  net_wan: number;
+  is_institution: boolean;
+}
+
+export interface DragonTigerAppearance {
+  date: string;
+  reason: string;
+  net_buy_wan: number;
+  turnover_rate?: number | null;
+}
+
+export interface DragonTigerData {
+  appearances: DragonTigerAppearance[];
+  buy_seats: DragonTigerSeat[];
+  sell_seats: DragonTigerSeat[];
+  inst_buy_wan?: number | null;
+  inst_sell_wan?: number | null;
+}
+
+export interface NorthboundDay {
+  date: string;
+  hgt: number;
+  sgt: number;
+}
+
+export interface NorthboundData {
+  hgt_net_inflow?: number | null;
+  sgt_net_inflow?: number | null;
+  history: NorthboundDay[];
+}
+
+export interface ConceptBlockItem {
+  name: string;
+  category: string;     // '行业' | '概念' | '地域'
+  change_pct?: number | null;
+  note?: string | null;
+}
+
+export interface ConceptBlocksData {
+  blocks: ConceptBlockItem[];
+  concepts: string[];
+}
+
+export interface ProfitForecastYear {
+  year: string;
+  mean_eps?: number | null;
+  min_eps?: number | null;
+  max_eps?: number | null;
+  analysts?: number | null;
+}
+
+export interface ProfitForecastData {
+  years: ProfitForecastYear[];
+  current_price?: number | null;
+  pe_ttm?: number | null;
+  forward_pe?: number | null;
+  peg?: number | null;
+}
+
+export interface LockupBatch {
+  date: string;
+  shares_type: string;
+  quantity?: number | null;
+  ratio?: number | null;
+}
+
+export interface LockupExpiryData {
+  batches: LockupBatch[];
+  future_batches: LockupBatch[];
+  has_future: boolean;
+}
+
+export interface HotStockItem {
+  ticker: string;
+  name: string;
+  change_pct?: number | null;
+  turnover_rate?: number | null;
+  volume_wan?: number | null;
+  net_flow_wan?: number | null;
+  topics: string;
+}
+
+export interface HotStocksData {
+  items: HotStockItem[];
+  total: number;
+}
+
+/** All known feature keys — used for tabs, dispatch, and availability checks. */
+export type AstockFeatureKey =
+  | "chip_distribution"
+  | "dragon_tiger"
+  | "northbound_flow"
+  | "concept_blocks"
+  | "profit_forecast"
+  | "lockup_expiry"
+  | "industry_comparison"
+  | "hot_stocks"
+  | "insider_transactions"
+  | "balance_sheet"
+  | "cashflow"
+  | "income_statement";
+
+export interface AstockFeatureTab {
+  key: AstockFeatureKey;
+  label: string;
+  needsAStock: boolean; // only available for 6-digit codes
+}
+
+export const ASTOCK_FEATURE_TABS: AstockFeatureTab[] = [
+  { key: "chip_distribution",  label: "筹码分布",  needsAStock: true },
+  { key: "dragon_tiger",       label: "龙虎榜",    needsAStock: true },
+  { key: "northbound_flow",    label: "北向资金",  needsAStock: false },
+  { key: "concept_blocks",     label: "概念板块",  needsAStock: true },
+  { key: "profit_forecast",    label: "盈利预测",  needsAStock: true },
+  { key: "lockup_expiry",      label: "解禁日历",  needsAStock: true },
+  { key: "industry_comparison", label: "行业对比",  needsAStock: true },
+  { key: "hot_stocks",         label: "人气榜",    needsAStock: false },
+  { key: "insider_transactions", label: "股东动向", needsAStock: true },
+  { key: "balance_sheet",      label: "资产负债表", needsAStock: true },
+  { key: "cashflow",           label: "现金流量表", needsAStock: true },
+  { key: "income_statement",   label: "利润表",    needsAStock: true },
+];
+
+// ── Price alert types (ticket 5.08) ────────────────────────────────────────
+
+export interface PriceAlert {
+  id: string;
+  ticker: string;
+  name?: string | null;
+  condition: "above" | "below";
+  target_price: number;
+  enabled: boolean;
+  triggered?: boolean;   // true once the alert has fired
+  created_at: string;    // ISO timestamp
+}
+
+export const ALERTS_STORAGE_KEY = "tradingagents_price_alerts";
+
+// ── Screener types (Phase 6, ticket 6.02) ──────────────────────────────────
+
+export interface ScreenerFilter {
+  field: string;
+  operator: string;
+  value: unknown;
+  period?: string | null;
+}
+
+export interface ScreenerCriteria {
+  filters: ScreenerFilter[];
+  sort_by?: string | null;
+  ascending?: boolean;
+}
+
+export interface ScreenerResultItem {
+  ticker: string;
+  name: string;
+  price?: number | null;
+  change_pct?: number | null;
+  pe?: number | null;
+  industry?: string | null;
+  score: number;
+  match_details?: Record<string, unknown>;
+}
+
+export interface ScreenerResponse {
+  query: string;
+  parsed_criteria: ScreenerCriteria;
+  results: ScreenerResultItem[];
+  count: number;
+  suggestion: string;
+}
+
+// ── Portfolio types (Phase 6, ticket 6.04) ──────────────────────────────────
+
+export interface PortfolioPosition {
+  ticker: string;
+  name: string;
+  quantity: number;
+  avg_cost: number;
+  current_price?: number | null;
+  market_value: number;
+  pnl: number;
+  pnl_pct: number;
+}
+
+export interface PortfolioResponse {
+  positions: PortfolioPosition[];
+  cash: number;
+  total_value: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+}
+
+export interface TradeRecord {
+  id: string;
+  ticker: string;
+  name: string;
+  action: "buy" | "sell";
+  quantity: number;
+  price: number;
+  total: number;
+  reason: string;
+  timestamp: string;
+}
+
+export interface NavPoint {
+  date: string;
+  nav: number;
 }

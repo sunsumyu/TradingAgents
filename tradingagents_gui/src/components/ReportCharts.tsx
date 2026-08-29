@@ -1,3 +1,4 @@
+import { Component, type ReactNode } from "react";
 import type { ChartData } from "../lib/types";
 import KlineChart from "./charts/KlineChart";
 import MacdChart from "./charts/MacdChart";
@@ -8,6 +9,32 @@ import FundFlowChart from "./charts/FundFlowChart";
 
 interface Props {
   chartData: ChartData;
+}
+
+// ── Error boundary so a single chart crash doesn't kill the entire report ──
+
+interface BoundaryState {
+  error: Error | null;
+}
+
+class ChartBoundary extends Component<{ title: string; children: ReactNode }, BoundaryState> {
+  state: BoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): BoundaryState {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="bg-[#1E222D] rounded-lg border border-[#363A45] p-4">
+          <div className="text-[12px] text-[#FF6B6B] mb-1">图表加载失败: {this.props.title}</div>
+          <div className="text-[11px] text-[#787B86]">{this.state.error.message}</div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function ReportCharts({ chartData }: Props) {
@@ -21,47 +48,69 @@ export default function ReportCharts({ chartData }: Props) {
 
   if (!hasAnyChart) return null;
 
+  // Count how many sub-indicators we have
+  const subIndicatorCount = [
+    chartData.macd,
+    chartData.rsi,
+    chartData.bollinger,
+  ].filter(Boolean).length;
+
+  // Use 3 columns when we have 3 indicators, otherwise 2
+  const gridCols = subIndicatorCount === 3
+    ? "grid-cols-1 md:grid-cols-3"
+    : "grid-cols-1 lg:grid-cols-2";
+
   return (
-    <div className="chart-section mb-6 space-y-4">
-      {/* Dashboard — always first if present */}
+    <div className="chart-section mb-6 space-y-3">
+      {/* Dashboard — compact signal bar at top */}
       {chartData.dashboard && (
         <ChartCard title="信号仪表盘">
-          <SignalDashboard data={chartData.dashboard} />
+          <ChartBoundary title="信号仪表盘">
+            <SignalDashboard data={chartData.dashboard} />
+          </ChartBoundary>
         </ChartCard>
       )}
 
-      {/* K-line chart — full width */}
+      {/* K-line chart — full width, TradingView-style */}
       {chartData.kline && (
         <ChartCard title="K线图">
-          <KlineChart data={chartData.kline} />
+          <ChartBoundary title="K线图">
+            <KlineChart data={chartData.kline} />
+          </ChartBoundary>
         </ChartCard>
       )}
 
-      {/* Technical indicators — 2-column grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* Technical indicators — adaptive grid */}
+      <div className={`grid ${gridCols} gap-3`}>
         {chartData.macd && (
           <ChartCard title="MACD">
-            <MacdChart data={chartData.macd} />
+            <ChartBoundary title="MACD">
+              <MacdChart data={chartData.macd} />
+            </ChartBoundary>
           </ChartCard>
         )}
         {chartData.rsi && (
           <ChartCard title="RSI">
-            <RsiChart data={chartData.rsi} />
+            <ChartBoundary title="RSI">
+              <RsiChart data={chartData.rsi} />
+            </ChartBoundary>
+          </ChartCard>
+        )}
+        {chartData.bollinger && (
+          <ChartCard title="布林带">
+            <ChartBoundary title="布林带">
+              <BollingerChart data={chartData.bollinger} />
+            </ChartBoundary>
           </ChartCard>
         )}
       </div>
 
-      {/* Bollinger — full width */}
-      {chartData.bollinger && (
-        <ChartCard title="布林带">
-          <BollingerChart data={chartData.bollinger} />
-        </ChartCard>
-      )}
-
       {/* Fund flow — full width */}
       {chartData.fundFlow && (
         <ChartCard title="资金流向">
-          <FundFlowChart data={chartData.fundFlow} />
+          <ChartBoundary title="资金流向">
+            <FundFlowChart data={chartData.fundFlow} />
+          </ChartBoundary>
         </ChartCard>
       )}
     </div>

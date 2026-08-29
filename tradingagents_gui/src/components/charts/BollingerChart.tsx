@@ -93,7 +93,7 @@ export default function BollingerChart({ data }: Props) {
   return (
     <ReactECharts
       option={option}
-      style={{ height: 250, width: "100%" }}
+      style={{ height: 260, width: "100%" }}
       notMerge
     />
   );

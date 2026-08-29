@@ -2,10 +2,16 @@ import type {
   AnalysisConfig,
   AnalyzeRequest,
   AnalyzeResponse,
+  AstockFeatureEnvelope,
   ModelInfo,
+  NavPoint,
+  PortfolioResponse,
   ProgressEvent,
   ProviderInfo,
+  RealtimePrice,
   ReportResponse,
+  ScreenerResponse,
+  TradeRecord,
 } from "./types";
 
 const BASE_URL = "http://127.0.0.1:8420";
@@ -39,6 +45,18 @@ export const api = {
     }
   },
 
+  /** GET /api/today — server-side date (bypasses JS Date issues) */
+  async getToday(): Promise<string> {
+    try {
+      const res = await fetch(`${BASE_URL}/api/today`);
+      if (!res.ok) return "";
+      const data = await res.json();
+      return data.date || "";
+    } catch {
+      return "";
+    }
+  },
+
   /** GET /api/providers — full catalog */
   async getProviders(): Promise<ProviderInfo[]> {
     const res = await fetch(`${BASE_URL}/api/providers`);
@@ -62,7 +80,7 @@ export const api = {
   },
 
   /** POST /api/analyze — maps frontend config → backend AnalyzeRequest schema */
-  async startAnalysis(config: AnalysisConfig): Promise<AnalyzeResponse> {
+  async startAnalysis(config: AnalysisConfig, resume: boolean = false): Promise<AnalyzeResponse> {
     // Convert platform-based config to backend ModelConfig format
     const getPlatformModelConfig = (platformId: string, model: string) => {
       const platform = config.llm_platforms.find(p => p.id === platformId);
@@ -90,6 +108,7 @@ export const api = {
       quick_think_llm: config.quick_think_llm,
       api_key: config.api_key || null,
       backend_url: config.llm_proxy_url || null,
+      resume,
     };
     const res = await fetch(`${BASE_URL}/api/analyze`, {
       method: "POST",
@@ -192,6 +211,174 @@ export const api = {
     });
     if (!resp.ok) {
       throw new Error(`Market data request failed: ${resp.status}`);
+    }
+    return resp.json();
+  },
+
+  /** POST /api/chart-data — fetch chart data with configurable date range.
+   *  ``interval`` ("1m"…"60m") selects minute bars; omit for daily bars. */
+  async getChartData(
+    ticker: string,
+    date: string,
+    days: number,
+    signal?: AbortSignal,
+    interval?: string | null,
+  ): Promise<{
+    ticker: string;
+    date: string;
+    days: number;
+    interval?: string | null;
+    kline?: import("./types").KlineData | null;
+    macd?: import("./types").MacdData | null;
+    rsi?: import("./types").RsiData | null;
+    bollinger?: import("./types").BollingerData | null;
+    fundFlow?: import("./types").FundFlowData | null;
+  }> {
+    const resp = await fetch(`${BASE_URL}/api/chart-data`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, date, days, interval: interval ?? null }),
+      signal,
+    });
+    if (!resp.ok) {
+      throw new Error(`Chart data request failed: ${resp.status}`);
+    }
+    return resp.json();
+  },
+
+  /** POST /api/realtime-prices - batch realtime quotes for the watchlist */
+  async getRealtimePrices(
+    tickers: string[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, RealtimePrice>> {
+    const resp = await fetch(`${BASE_URL}/api/realtime-prices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers }),
+      signal,
+    });
+    if (!resp.ok) {
+      throw new Error(`Realtime prices request failed: ${resp.status}`);
+    }
+    return resp.json();
+  },
+
+  /** GET /api/checkpoints/{ticker} — check if a resumable checkpoint exists */
+  async getCheckpoint(ticker: string): Promise<{
+    ticker: string;
+    has_checkpoint: boolean;
+    step: number | null;
+    date: string;
+  }> {
+    const resp = await fetch(`${BASE_URL}/api/checkpoints/${encodeURIComponent(ticker)}`);
+    if (!resp.ok) {
+      return { ticker, has_checkpoint: false, step: null, date: "" };
+    }
+    return resp.json();
+  },
+
+  /** POST /api/astock-features — A-stock data center feature (Phase 5).
+   *  Single endpoint + feature dispatch table; ``data`` is the structured
+   *  parser output for the feature, ``raw_md`` the verbatim markdown. */
+  async getAstockFeature<T = Record<string, unknown>>(
+    feature: string,
+    ticker: string,
+    date: string,
+    signal?: AbortSignal,
+    params?: Record<string, unknown>,
+  ): Promise<AstockFeatureEnvelope<T>> {
+    const resp = await fetch(`${BASE_URL}/api/astock-features`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feature, ticker, date, params: params ?? {} }),
+      signal,
+    });
+    if (!resp.ok) {
+      let detail = `Feature request failed: ${resp.status}`;
+      try {
+        const body = await resp.json();
+        detail = body.detail ?? detail;
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(detail);
+    }
+    return resp.json();
+  },
+
+  /** GET /api/portfolio — current portfolio with positions and P&L */
+  async getPortfolio(): Promise<PortfolioResponse> {
+    const resp = await fetch(`${BASE_URL}/api/portfolio`);
+    return handle<PortfolioResponse>(resp);
+  },
+
+  /** POST /api/portfolio/trade — execute a simulated trade */
+  async portfolioTrade(
+    ticker: string,
+    action: "buy" | "sell",
+    quantity: number,
+    price: number,
+    name?: string,
+    reason?: string,
+  ): Promise<PortfolioResponse> {
+    const resp = await fetch(`${BASE_URL}/api/portfolio/trade`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, action, quantity, price, name: name ?? "", reason: reason ?? "" }),
+    });
+    if (!resp.ok) {
+      let detail = `Trade failed: ${resp.status}`;
+      try {
+        const body = await resp.json();
+        detail = body.detail ?? detail;
+      } catch { /* not JSON */ }
+      throw new Error(detail);
+    }
+    return resp.json();
+  },
+
+  /** GET /api/portfolio/history — trade history */
+  async getPortfolioHistory(): Promise<TradeRecord[]> {
+    const resp = await fetch(`${BASE_URL}/api/portfolio/history`);
+    return handle<TradeRecord[]>(resp);
+  },
+
+  /** GET /api/portfolio/nav — NAV history for performance chart */
+  async getPortfolioNav(): Promise<{ nav_history: NavPoint[] }> {
+    const resp = await fetch(`${BASE_URL}/api/portfolio/nav`);
+    return handle<{ nav_history: NavPoint[] }>(resp);
+  },
+
+  /** POST /api/portfolio/reset — reset portfolio */
+  async resetPortfolio(initialCash: number = 1_000_000): Promise<PortfolioResponse> {
+    const resp = await fetch(`${BASE_URL}/api/portfolio/reset?initial_cash=${initialCash}`, {
+      method: "POST",
+    });
+    return handle<PortfolioResponse>(resp);
+  },
+
+  /** POST /api/screener — natural-language stock screener (Phase 6) */
+  async runScreener(
+    query: string,
+    maxResults: number = 20,
+    tickerHint?: string,
+    signal?: AbortSignal,
+  ): Promise<ScreenerResponse> {
+    const resp = await fetch(`${BASE_URL}/api/screener`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, max_results: maxResults, ticker_hint: tickerHint ?? null }),
+      signal,
+    });
+    if (!resp.ok) {
+      let detail = `Screener request failed: ${resp.status}`;
+      try {
+        const body = await resp.json();
+        detail = body.detail ?? detail;
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(detail);
     }
     return resp.json();
   },

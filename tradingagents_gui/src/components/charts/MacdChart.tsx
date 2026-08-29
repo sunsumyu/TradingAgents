@@ -75,7 +75,7 @@ export default function MacdChart({ data }: Props) {
   return (
     <ReactECharts
       option={option}
-      style={{ height: 200, width: "100%" }}
+      style={{ height: 240, width: "100%" }}
       notMerge
     />
   );
