@@ -1,4 +1,4 @@
-"""Price/indicator alert endpoints (ticket #4)."""
+"""Price/indicator alert endpoints (ticket #4 + #12)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,16 @@ from fastapi import APIRouter, HTTPException
 
 from ..alerts import (
     AlertOut,
+    AlertSyncRequest,
+    AlertSyncResult,
     check_alerts,
     create_alert,
     delete_alert,
     get_alert_history,
+    get_sync_state,
     list_alerts,
     set_alert_enabled,
+    sync_alerts,
 )
 from ..schemas import AlertCheckRequest, AlertCreateRequest, AlertEnabledRequest
 
@@ -28,6 +32,17 @@ async def get_alerts(ticker: str | None = None):
         return list_alerts(ticker)
     except Exception as exc:
         logger.error("Failed to list alerts: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.put("/api/alerts/sync", response_model=AlertSyncResult)
+async def put_alert_sync(request: AlertSyncRequest):
+    """Merge the client's alert state into the server and return the
+    merged result (newer-wins-by-updated_at + deletion tombstones)."""
+    try:
+        return sync_alerts(request)
+    except Exception as exc:
+        logger.error("Alert sync failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
