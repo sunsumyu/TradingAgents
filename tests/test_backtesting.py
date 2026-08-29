@@ -18,6 +18,171 @@ from tradingagents.backtesting.report import generate_backtest_report
 
 
 # ---------------------------------------------------------------------------
+# akquant-shaped result fakes (mirror the installed akquant public surface:
+# metrics wrapper with __getattr__ delegation, trades_df DataFrame,
+# equity_curve tz-aware Series; scalars in percent / decimal conventions)
+# ---------------------------------------------------------------------------
+
+try:
+    import pandas as pd
+    _HAS_PANDAS = True
+except ImportError:  # pragma: no cover
+    _HAS_PANDAS = False
+
+
+class _RawMetrics:
+    """Mirrors akquant PerformanceMetrics field names and conventions."""
+
+    total_return = 0.12              # decimal
+    annualized_return = 0.35         # decimal
+    max_drawdown = -0.08             # decimal (negative)
+    sharpe_ratio = 1.45
+    win_rate = 60.0                  # percent
+    initial_market_value = 100_000.0
+    end_market_value = 112_000.0
+
+
+class _MetricsWrapper:
+    """Mirrors akquant's MetricsWrapper: __getattr__ delegates to raw."""
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def __getattr__(self, name):
+        return getattr(self._raw, name)
+
+
+class _RawTradeMetrics:
+    total_closed_trades = 3
+    won_count = 2
+    lost_count = 1
+    win_rate = 66.6667               # percent
+    avg_return_pct = 2.5             # percent
+
+
+def _make_akquant_fake():
+    """Build a result object shaped like akquant's BacktestResult wrapper."""
+    assert _HAS_PANDAS, "pandas required for akquant-shaped fakes"
+
+    idx = pd.to_datetime(
+        ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08"], utc=True
+    )
+    equity = pd.Series([100_000.0, 102_000.0, 101_000.0, 112_000.0], index=idx)
+
+    trades_df = pd.DataFrame({
+        "symbol": ["600519"] * 3,
+        "pnl": [1500.0, -400.0, 900.0],
+        "net_pnl": [1480.0, -420.0, 880.0],
+        "return_pct": [0.015, -0.004, 0.009],
+    })
+
+    class _Fake:
+        pass
+
+    fake = _Fake()
+    fake.metrics = _MetricsWrapper(_RawMetrics())
+    fake.trade_metrics = _RawTradeMetrics()
+    fake.equity_curve = equity
+    fake.trades_df = trades_df
+    fake.trades = object()  # non-iterable sentinel: must not crash extraction
+    return fake
+
+
+@pytest.mark.unit
+class TestParseResultAkquantShape:
+    """_parse_result must read the real akquant result shape."""
+
+    @pytest.fixture(autouse=True)
+    def _require_pandas(self):
+        if not _HAS_PANDAS:
+            pytest.skip("pandas not installed")
+
+    def _parse(self, fake):
+        engine = BacktestEngine()
+        return engine._parse_result(
+            fake,
+            ticker="600519",
+            strategy_class=type("AgentStrategy_BUY_600519", (), {}),
+            initial_cash=100_000.0,
+        )
+
+    def test_metrics_extracted_from_wrapper(self):
+        r = self._parse(_make_akquant_fake())
+        assert r.total_return == pytest.approx(0.12)
+        assert r.annual_return == pytest.approx(0.35)
+        assert r.sharpe_ratio == pytest.approx(1.45)
+        assert r.max_drawdown == pytest.approx(-0.08)
+        assert r.final_value == pytest.approx(112_000.0)
+
+    def test_win_rate_converted_from_percent(self):
+        r = self._parse(_make_akquant_fake())
+        # trade_metrics.win_rate=66.67% -> 0.6667 fraction
+        assert r.win_rate == pytest.approx(0.666667, abs=1e-4)
+
+    def test_trade_stats_from_trades_df(self):
+        r = self._parse(_make_akquant_fake())
+        assert r.total_trades == 3
+        assert r.profit_trades == 2
+        assert r.loss_trades == 1
+
+    def test_equity_curve_daily_points(self):
+        r = self._parse(_make_akquant_fake())
+        curve = r.equity_curve
+        assert isinstance(curve, list)
+        assert len(curve) == 4
+        assert curve[0] == {"date": "2026-01-05", "value": 100_000.0}
+        assert curve[-1] == {"date": "2026-01-08", "value": 112_000.0}
+
+    def test_equity_curve_derives_missing_final_value(self):
+        fake = _make_akquant_fake()
+        fake.metrics = _MetricsWrapper(type("M", (), {
+            "total_return": 0.12,
+        })())
+        r = self._parse(fake)
+        # end_market_value absent -> derive from curve
+        assert r.final_value == pytest.approx(112_000.0)
+        assert r.total_return == pytest.approx(0.12)
+
+    def test_total_return_derived_from_curve(self):
+        fake = _make_akquant_fake()
+        fake.metrics = _MetricsWrapper(type("M", (), {})())
+        r = self._parse(fake)
+        # (112000-100000)/100000
+        assert r.total_return == pytest.approx(0.12)
+
+    def test_derived_total_return_from_end_market_value(self):
+        fake = _make_akquant_fake()
+        fake.equity_curve = pd.Series(dtype=float)  # empty curve
+        raw = _RawMetrics()
+        raw.total_return = 0.0  # engine treats 0.0 as missing sentinel
+        fake.metrics = _MetricsWrapper(raw)
+        r = self._parse(fake)
+        assert r.total_return == pytest.approx(0.12)
+
+    def test_flat_object_fallback(self):
+        """Simple flat fakes (old-style) still work."""
+        fake = _make_akquant_fake()
+        fake.metrics = None
+        fake.trade_metrics = None
+        fake.trades_df = None
+        fake.equity_curve = None
+        # no metrics object: fields stay None, no crash
+        r = self._parse(fake)
+        assert r.final_value is None
+        assert r.total_trades == 0
+        assert r.equity_curve == []
+
+    def test_naive_datetime_index_tolerated(self):
+        fake = _make_akquant_fake()
+        fake.equity_curve = pd.Series(
+            [100_000.0, 105_000.0],
+            index=pd.to_datetime(["2026-02-01", "2026-02-02"]),
+        )
+        r = self._parse(fake)
+        assert r.equity_curve[0] == {"date": "2026-02-01", "value": 100_000.0}
+
+
+# ---------------------------------------------------------------------------
 # Strategy adapter tests
 # ---------------------------------------------------------------------------
 

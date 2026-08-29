@@ -6,7 +6,6 @@ Provides ``POST /api/backtest`` for running backtests from trade decisions.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -14,6 +13,35 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+INSTALL_HINT = (
+    "pip install akquant  or  pip install 'tradingagents[backtest]'"
+)
+
+
+def _load_engine():
+    """Import and return the BacktestEngine class (lazily, for testability)."""
+    from tradingagents.backtesting.engine import BacktestEngine
+
+    return BacktestEngine
+
+
+def _create_strategy(decision: str, ticker: str, holding_days: int):
+    """Import and call the strategy factory (lazily, for testability)."""
+    from tradingagents.backtesting.strategy import create_strategy_class
+
+    return create_strategy_class(
+        decision=decision,
+        ticker=ticker,
+        holding_days=holding_days,
+    )
+
+
+class EquityPoint(BaseModel):
+    """One point on the equity curve."""
+
+    date: str
+    value: float
 
 
 class BacktestRequest(BaseModel):
@@ -43,6 +71,7 @@ class BacktestResponse(BaseModel):
     initial_cash: float = 100_000.0
     final_value: float | None = None
     holding_days: int = 5
+    equity_curve: list[EquityPoint] = Field(default_factory=list)
     report_path: str | None = None
     report_markdown: str | None = None
 
@@ -55,23 +84,29 @@ async def run_backtest(request: BacktestRequest):
     Requires akquant to be installed: ``pip install akquant``.
     """
     try:
-        from tradingagents.backtesting.engine import BacktestEngine
+        engine_cls = _load_engine()
         from tradingagents.backtesting.report import generate_backtest_report
     except ImportError as e:
         raise HTTPException(
             status_code=503,
-            detail=f"Backtesting engine not available: {e}. Install with: pip install akquant",
+            detail=f"Backtesting engine not available: {e}. Install with: {INSTALL_HINT}",
         )
 
-    engine = BacktestEngine()
+    engine = engine_cls()
 
-    # Build a strategy class from the decision
-    from tradingagents.backtesting.strategy import create_strategy_class
-    strategy_class = create_strategy_class(
-        decision=request.decision,
-        ticker=request.ticker,
-        holding_days=request.holding_days,
-    )
+    # Build a strategy class from the decision (imports akquant eagerly,
+    # so an ImportError here must also surface as 503, not a bare 500)
+    try:
+        strategy_class = _create_strategy(
+            decision=request.decision,
+            ticker=request.ticker,
+            holding_days=request.holding_days,
+        )
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Backtesting engine not available: {e}. Install with: {INSTALL_HINT}",
+        )
 
     try:
         result = engine.run(
@@ -80,6 +115,12 @@ async def run_backtest(request: BacktestRequest):
             end_date=request.end_date,
             strategy_class=strategy_class,
             initial_cash=request.initial_cash,
+            holding_days=request.holding_days,
+        )
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Backtesting engine not available: {e}. Install with: {INSTALL_HINT}",
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -104,6 +145,10 @@ async def run_backtest(request: BacktestRequest):
         initial_cash=result.initial_cash,
         final_value=result.final_value,
         holding_days=result.holding_days,
+        equity_curve=[
+            EquityPoint(date=p["date"], value=p["value"])
+            for p in (result.equity_curve or [])
+        ],
         report_path=result.report_path,
         report_markdown=report_md,
     )
