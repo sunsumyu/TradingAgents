@@ -362,6 +362,22 @@ class ScreenerEngine:
             limit=limit,
         )
 
+    def evaluate_row(self, row: dict[str, Any], filters: list[Filter]) -> list[bool]:
+        """Evaluate filters against a single stock row.
+
+        Per-filter match results (not AND-collapsed), so callers can score
+        partial matches. This is the single comparison implementation for
+        the whole codebase — the HTTP screener service delegates here.
+
+        Args:
+            row: One stock's data keyed by field name.
+            filters: Filters to evaluate.
+
+        Returns:
+            List of booleans parallel to *filters*.
+        """
+        return [_apply_filter(row.get(f.field), f) for f in filters]
+
     # ── Private helpers ───────────────────────────────────────────────────
 
     def _get_stock_pool(self) -> pd.DataFrame:

@@ -212,3 +212,45 @@ class TestScreenerEngine:
         results = screener_engine.screen_natural("ROE>20")
         tickers = [r.ticker for r in results]
         assert "600519" in tickers  # ROE=30
+
+
+class TestEvaluateRow:
+    """ScreenerEngine.evaluate_row — single-row filter evaluation (ticket #3).
+
+    The HTTP service layer delegates ALL comparison logic here so the engine
+    is the single evaluation authority across the codebase.
+    """
+
+    def test_numeric_operators(self, screener_engine):
+        row = {"pe_ratio": 15.0}
+        matches = screener_engine.evaluate_row(row, [
+            Filter("pe_ratio", FilterOperator.LT, 20),
+            Filter("pe_ratio", FilterOperator.GT, 20),
+            Filter("pe_ratio", FilterOperator.GTE, 15),
+            Filter("pe_ratio", FilterOperator.LTE, 15),
+            Filter("pe_ratio", FilterOperator.EQ, 15),
+        ])
+        assert matches == [True, False, True, True, True]
+
+    def test_missing_value_is_false(self, screener_engine):
+        matches = screener_engine.evaluate_row({}, [
+            Filter("pe_ratio", FilterOperator.LT, 20),
+        ])
+        assert matches == [False]
+
+    def test_missing_value_sentinel_passes(self, screener_engine):
+        """Services backfill pass-sentinels (+inf for GT/GTE) to preserve
+        legacy 'missing data does not disqualify' semantics."""
+        matches = screener_engine.evaluate_row(
+            {"chip_profit_ratio": float("inf")},
+            [Filter("chip_profit_ratio", FilterOperator.GTE, 50)],
+        )
+        assert matches == [True]
+
+    def test_string_contains(self, screener_engine):
+        row = {"industry": "白酒 消费 食品饮料"}
+        matches = screener_engine.evaluate_row(row, [
+            Filter("industry", FilterOperator.CONTAINS, "消费"),
+            Filter("industry", FilterOperator.CONTAINS, "半导体"),
+        ])
+        assert matches == [True, False]

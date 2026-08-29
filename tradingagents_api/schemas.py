@@ -306,9 +306,10 @@ class MarketDataResponse(BaseModel):
 class ScreenerRequest(BaseModel):
     """Request body for the natural-language screener."""
 
-    query: str
+    query: str = ""
     max_results: int = 20
     ticker_hint: str | None = None
+    template_id: str | None = None  # Run a preset template instead of NL query
 
 
 class PortfolioTradeRequest(BaseModel):

@@ -1,14 +1,15 @@
-"""Natural-language stock screener (Phase 6, ticket 6.01).
+"""Natural-language stock screener service (migrated onto screener_engine, ticket #3).
 
-Translates a user's free-form Chinese query (e.g. "帮我找北向连续加仓
-且 PE<20 的消费股") into structured filter criteria via the quick LLM,
-then executes those filters against the Phase 5 FEATURE_TABLE data
-functions and returns a ranked list of candidates.
+Translates a user's free-form Chinese query into structured filter criteria
+via the quick LLM, then evaluates candidates through the screener engine —
+the single comparison implementation across the codebase. The service keeps:
+NL parsing, candidate discovery (hot-stocks universe), FEATURE_TABLE data
+fetching, the legacy partial-match scoring formula, and the response contract.
 
-Architecture:
-  1. LLM parses NL → JSON filters (quick model, <2s)
-  2. For each candidate stock, fetch relevant FEATURE_TABLE data
-  3. Apply filters, score, rank, return top-N
+Field vocabulary is unified onto the engine's Filter/FilterOperator. Legacy
+semantics are preserved per field, including "missing optional data does not
+disqualify" (translated into pass-sentinels) vs. strict fields like pe_ratio
+(missing pe disqualifies, exactly as before).
 """
 
 from __future__ import annotations
@@ -16,9 +17,11 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date
-from typing import Any
+from typing import Any, Callable, NamedTuple
 
 from pydantic import BaseModel, Field
+
+from tradingagents.screener_engine import Filter, FilterOperator, ScreenerEngine
 
 logger = logging.getLogger(__name__)
 
@@ -129,21 +132,29 @@ SCREENER_USER_PROMPT = """\
 请将上述条件解析为JSON过滤器。只输出JSON，不要其他内容。"""
 
 
-# ── Core execution logic ─────────────────────────────────────────────────────
+# ── LLM parsing ──────────────────────────────────────────────────────────────
 
 
 def _parse_query_with_llm(query: str, config: dict[str, Any]) -> ScreenerCriteria:
-    """Use the quick LLM to translate NL query → structured filters."""
-    from tradingagents.llm_clients.factory import create_quick_llm
-    from tradingagents.agents.utils.cached_llm import CachedLLM
+    """Use the quick LLM to translate NL query → structured filters.
 
-    llm = CachedLLM(create_quick_llm(config))
+    Responses are cached (ticket #13): identical queries against the same
+    model return from the per-installation LLM cache instead of re-billing.
+    """
+    from tradingagents.agents.utils.cached_llm import CachedLLM
+    from tradingagents.llm_cache import LLMCache
+    from tradingagents.llm_clients.factory import create_quick_llm
+
+    cache = LLMCache(config.get("data_cache_dir"), ticker="screener")
+    llm = CachedLLM(create_quick_llm(config), cache)
     prompt = SCREENER_USER_PROMPT.format(query=query)
 
     try:
+        from langchain_core.messages import HumanMessage, SystemMessage
+
         response = llm.invoke([
-            {"role": "system", "content": SCREENER_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
+            SystemMessage(content=SCREENER_SYSTEM_PROMPT),
+            HumanMessage(content=prompt),
         ])
         text = response.content.strip()
         # Strip markdown code fences if present
@@ -161,36 +172,22 @@ def _parse_query_with_llm(query: str, config: dict[str, Any]) -> ScreenerCriteri
         return ScreenerCriteria()
 
 
+# ── Candidate discovery & data fetching ─────────────────────────────────────
+
+
 def _get_candidate_stocks(
     filters: list[ScreenerFilter], config: dict[str, Any]
 ) -> list[dict[str, str]]:
     """Determine candidate stocks based on filters.
 
-    For market-wide features (hot_stocks, northbound_flow, industry_comparison),
-    we fetch the full list and extract tickers. For ticker-specific features,
-    we need the user to have specified tickers or we fall back to hot_stocks.
+    Uses hot_stocks (人气榜) as the primary candidate universe — the
+    most-watched A-shares — falling back to northbound data if unavailable.
     """
-    from .astock_features import FEATURE_TABLE, is_astock_code
+    from .astock_features import FEATURE_TABLE
 
     today = date.today().isoformat()
     candidates: list[dict[str, str]] = []
 
-    # Collect tickers from market-wide features
-    market_features = {"hot_stocks", "northbound_flow", "industry_comparison"}
-    ticker_features = set()
-
-    for f in filters:
-        if f.field in market_features:
-            # These are market-wide, we'll fetch and extract tickers
-            pass
-        elif f.field in ("pe_ratio", "market_cap", "change_pct"):
-            # These require a stock universe — fall back to hot_stocks
-            pass
-        else:
-            ticker_features.add(f.field)
-
-    # Strategy: use hot_stocks as the primary candidate universe
-    # (most natural — these are the most-watched A-shares)
     if "hot_stocks" in FEATURE_TABLE:
         try:
             entry = FEATURE_TABLE["hot_stocks"]
@@ -204,30 +201,18 @@ def _get_candidate_stocks(
         except Exception as exc:
             logger.warning("Failed to fetch hot_stocks as candidate universe: %s", exc)
 
-    # If no candidates from hot_stocks, try northbound
-    if not candidates and "northbound_flow" in FEATURE_TABLE:
-        try:
-            entry = FEATURE_TABLE["northbound_flow"]
-            md = entry["call"]("", today, {})
-            data = entry["parse"](md, "", today, {})
-            # northbound doesn't have individual stock tickers in structured data
-            # Fall back to empty
-        except Exception:
-            pass
-
     return candidates
 
 
 def _fetch_stock_data(
     ticker: str, filters: list[ScreenerFilter], config: dict[str, Any]
 ) -> dict[str, Any]:
-    """Fetch relevant data for one stock based on active filters."""
+    """Fetch relevant FEATURE_TABLE data for one stock based on active filters."""
     from .astock_features import FEATURE_TABLE
 
     today = date.today().isoformat()
     stock_data: dict[str, Any] = {"ticker": ticker}
 
-    # Map filter fields to feature names
     field_to_feature = {
         "northbound_flow": "northbound_flow",
         "hot_stocks": "hot_stocks",
@@ -237,9 +222,12 @@ def _fetch_stock_data(
         "industry_comparison": "industry_comparison",
         "profit_forecast": "profit_forecast",
         "lockup_expiry": "lockup_expiry",
+        # Legacy gap fixed (ticket #3): these criteria previously fetched no
+        # data, so the filters never matched anything.
+        "pe_ratio": "profit_forecast",
+        "industry": "concept_blocks",
     }
 
-    # Deduplicate features to fetch
     features_to_fetch: set[str] = set()
     for f in filters:
         feat = field_to_feature.get(f.field)
@@ -260,135 +248,180 @@ def _fetch_stock_data(
     return stock_data
 
 
-def _apply_filter(data: dict[str, Any], filt: ScreenerFilter) -> bool:
-    """Check if a stock's data passes one filter criterion.
+# ── Filter translation: legacy criteria → engine evaluation ─────────────────
 
-    Returns True if the stock matches the filter.
+
+class _FilterPlan(NamedTuple):
+    """One legacy filter translated for engine evaluation.
+
+    Either ``engine_filter`` is set (row evaluated via ScreenerEngine, with
+    ``column``/``sentinel`` describing how to build the row value), or
+    ``predicate`` is set for semantics the engine cannot express (OR-lists,
+    boolean feature flags). Everything the engine *can* express goes through
+    the engine — it is the single comparison implementation.
     """
-    field = filt.field
-    op = filt.operator
-    value = filt.value
 
-    if field == "pe_ratio":
-        pe = data.get("profit_forecast", {}).get("pe_ttm")
-        if pe is None:
-            return False
-        return _compare_numeric(pe, op, value)
-
-    if field == "market_cap":
-        # Not directly available from Phase 5 features; skip
-        return True
-
-    if field == "industry":
-        concepts = data.get("concept_blocks", {}).get("concepts", [])
-        blocks = data.get("concept_blocks", {}).get("blocks", [])
-        industry_names = [b.get("name", "") for b in blocks if b.get("category") == "行业"]
-        all_names = concepts + industry_names
-        if isinstance(value, list):
-            return any(v in " ".join(all_names) for v in value)
-        return str(value) in " ".join(all_names) if all_names else False
-
-    if field == "change_pct":
-        # Not directly in Phase 5 data; skip
-        return True
-
-    if field == "northbound_flow":
-        return True  # Northbound is market-wide, not per-stock filterable here
-
-    if field == "hot_stocks":
-        return True  # Already used as candidate universe
-
-    if field == "concept_blocks":
-        concepts = data.get("concept_blocks", {}).get("concepts", [])
-        blocks = data.get("concept_blocks", {}).get("blocks", [])
-        names = [b.get("name", "") for b in blocks] + concepts
-        if isinstance(value, list):
-            return any(v in " ".join(names) for v in value)
-        return str(value) in " ".join(names) if names else False
-
-    if field == "chip_distribution":
-        chip = data.get("chip_distribution", {})
-        profit_ratio = chip.get("profit_ratio")
-        if profit_ratio is not None and op in (">", ">="):
-            return _compare_numeric(profit_ratio, op, value)
-        return True
-
-    if field == "dragon_tiger":
-        dt = data.get("dragon_tiger", {})
-        appearances = dt.get("appearances", [])
-        if op == "net_buy" and appearances:
-            return any(a.get("net_buy_wan", 0) > float(value or 0) for a in appearances)
-        return len(appearances) > 0
-
-    if field == "industry_comparison":
-        return True  # Market-wide feature
-
-    if field == "profit_forecast":
-        pf = data.get("profit_forecast", {})
-        pe = pf.get("pe_ttm")
-        peg = pf.get("peg")
-        if pe is not None and op in ("<", "<=", ">", ">="):
-            return _compare_numeric(pe, op, value)
-        if peg is not None and op in ("<", "<=", ">", ">="):
-            return _compare_numeric(peg, op, value)
-        return True
-
-    if field == "lockup_expiry":
-        le = data.get("lockup_expiry", {})
-        has_future = le.get("has_future", False)
-        if value is True or str(value).lower() == "true":
-            return has_future
-        if value is False or str(value).lower() == "false":
-            return not has_future
-        return True
-
-    return True
+    field: str
+    filt: ScreenerFilter
+    engine_filter: Filter | None = None
+    predicate: Callable[[dict[str, Any]], bool] | None = None
+    column: str | None = None
+    filler: Callable[[dict[str, Any]], Any] | None = None
+    sentinel: Any = None  # Backfilled when the data is missing (legacy: pass)
 
 
-def _compare_numeric(actual: float, op: str, threshold: Any) -> bool:
-    """Compare a numeric value against a threshold with the given operator."""
-    try:
-        t = float(threshold)
-    except (ValueError, TypeError):
-        return False
-    if op == ">":
-        return actual > t
-    if op == ">=":
-        return actual >= t
-    if op == "<":
-        return actual < t
-    if op == "<=":
-        return actual <= t
-    if op == "=" or op == "==":
-        return abs(actual - t) < 0.001
-    return True
+_NUMERIC_OPS = {">": FilterOperator.GT, "<": FilterOperator.LT,
+                ">=": FilterOperator.GTE, "<=": FilterOperator.LTE,
+                "=": FilterOperator.EQ}
+
+
+def _translate_filters(filters: list[ScreenerFilter]) -> list[_FilterPlan]:
+    """Translate legacy LLM-parsed criteria into engine-based plans.
+
+    Per-field legacy semantics preserved:
+    - pe_ratio: missing pe disqualifies (no sentinel)
+    - market_cap / change_pct / northbound_flow / hot_stocks /
+      industry_comparison: always pass (universe-level or unavailable)
+    - industry / concept_blocks: substring match; list values = OR (predicate)
+    - chip_distribution: missing ratio passes (sentinel); >/>= compare
+    - dragon_tiger: net_buy compares max net amount; other ops = has records
+    - profit_forecast: pe, falling back to peg; both missing passes (sentinel)
+    - lockup_expiry: boolean has_future flag
+    """
+    plans: list[_FilterPlan] = []
+
+    for f in filters:
+        op = f.operator
+        plan = _FilterPlan(field=f.field, filt=f)
+
+        if f.field == "pe_ratio":
+            if op in _NUMERIC_OPS:
+                plan = plan._replace(
+                    engine_filter=Filter("pe_ratio", _NUMERIC_OPS[op], f.value),
+                    column="pe_ratio",
+                    filler=lambda d: d.get("profit_forecast", {}).get("pe_ttm"),
+                )
+            else:
+                plan = plan._replace(predicate=lambda d: True)
+
+        elif f.field in ("market_cap", "change_pct", "northbound_flow",
+                         "hot_stocks", "industry_comparison"):
+            # Legacy: universe-level or unavailable — always pass
+            plan = plan._replace(predicate=lambda d: True)
+
+        elif f.field in ("industry", "concept_blocks"):
+            # Both legacy fields read their names from the concept_blocks data
+            def _names(d: dict[str, Any]) -> str:
+                blocks = d.get("concept_blocks", {})
+                concepts = blocks.get("concepts", [])
+                names = [b.get("name", "") for b in blocks.get("blocks", [])]
+                return " ".join(concepts + names)
+
+            if isinstance(f.value, list):
+                # OR-of-substrings — not expressible in engine operators
+                joined_any = lambda d, _names=_names, _vals=f.value: any(
+                    str(v) in _names(d) for v in _vals
+                )
+                plan = plan._replace(predicate=joined_any)
+            else:
+                plan = plan._replace(
+                    engine_filter=Filter(f.field, FilterOperator.CONTAINS, f.value),
+                    column=f.field,
+                    filler=_names,
+                )
+
+        elif f.field == "chip_distribution":
+            if op in (">", ">="):
+                plan = plan._replace(
+                    engine_filter=Filter("chip_profit_ratio", _NUMERIC_OPS[op], f.value),
+                    column="chip_profit_ratio",
+                    filler=lambda d: d.get("chip_distribution", {}).get("profit_ratio"),
+                    sentinel=float("inf"),  # Legacy: missing ratio passes
+                )
+            else:
+                plan = plan._replace(predicate=lambda d: True)
+
+        elif f.field == "dragon_tiger":
+            if op == "net_buy":
+                plan = plan._replace(
+                    engine_filter=Filter("dragon_tiger_net_buy", FilterOperator.GT,
+                                         float(f.value or 0)),
+                    column="dragon_tiger_net_buy",
+                    filler=lambda d: max(
+                        (a.get("net_buy_wan", 0)
+                         for a in d.get("dragon_tiger", {}).get("appearances", [])),
+                        default=None,
+                    ),
+                )  # No sentinel: legacy fails when no records
+            else:
+                has_records = lambda d: len(
+                    d.get("dragon_tiger", {}).get("appearances", [])
+                ) > 0
+                plan = plan._replace(predicate=has_records)
+
+        elif f.field == "profit_forecast":
+            if op in _NUMERIC_OPS:
+                plan = plan._replace(
+                    engine_filter=Filter("profit_forecast_pe", _NUMERIC_OPS[op], f.value),
+                    column="profit_forecast_pe",
+                    # Legacy: pe, falling back to peg
+                    filler=lambda d: d.get("profit_forecast", {}).get("pe_ttm")
+                    if d.get("profit_forecast", {}).get("pe_ttm") is not None
+                    else d.get("profit_forecast", {}).get("peg"),
+                    # Legacy: both missing passes
+                    sentinel=float("-inf") if op in ("<", "<=") else float("inf"),
+                )
+            else:
+                plan = plan._replace(predicate=lambda d: True)
+
+        elif f.field == "lockup_expiry":
+            want = f.value is True or str(f.value).lower() == "true"
+            has_future = lambda d, _want=want: bool(
+                d.get("lockup_expiry", {}).get("has_future", False)
+            ) == _want
+            plan = plan._replace(predicate=has_future)
+
+        else:
+            plan = plan._replace(predicate=lambda d: True)
+
+        plans.append(plan)
+
+    return plans
+
+
+def _build_row(stock_data: dict[str, Any], plans: list[_FilterPlan]) -> dict[str, Any]:
+    """Build the engine-evaluation row: fill translated columns, backfilling
+    pass-sentinels where the underlying data is missing."""
+    row: dict[str, Any] = {"ticker": stock_data.get("ticker", "")}
+    for plan in plans:
+        if plan.engine_filter is None or plan.column is None:
+            continue
+        value = plan.filler(stock_data) if plan.filler else None
+        row[plan.column] = value if value is not None else plan.sentinel
+    return row
 
 
 def _score_stock(
-    data: dict[str, Any], filters: list[ScreenerFilter]
+    plans: list[_FilterPlan],
+    matches: list[bool],
+    stock_data: dict[str, Any],
 ) -> tuple[float, dict[str, Any]]:
-    """Score a stock 0-100 based on how well it matches the filters.
-
-    Returns (score, match_details).
-    """
+    """Legacy partial-match scoring over engine-evaluated results."""
     score = 0.0
     details: dict[str, Any] = {}
-    total_filters = len(filters) if filters else 1
+    total_filters = len(plans) if plans else 1
 
-    for filt in filters:
-        matched = _apply_filter(data, filt)
+    for plan, matched in zip(plans, matches):
         if matched:
             score += 100.0 / total_filters
-            details[filt.field] = {"matched": True, "filter": filt.model_dump()}
-        else:
-            details[filt.field] = {"matched": False, "filter": filt.model_dump()}
+        details[plan.field] = {"matched": matched, "filter": plan.filt.model_dump()}
 
-    # Bonus for rich data availability
+    # Bonus for rich data availability (legacy formula)
     feature_count = sum(
-        1 for k in data if k in (
+        1 for k in (
             "chip_distribution", "dragon_tiger", "concept_blocks",
             "profit_forecast", "lockup_expiry",
-        ) and data[k]
+        ) if stock_data.get(k)
     )
     score = min(100.0, score + feature_count * 2)
 
@@ -415,6 +448,10 @@ def run_screener(
     Returns:
         ScreenerResponse with parsed criteria, results, and suggestion.
     """
+    from .astock_features import is_astock_code
+
+    engine = ScreenerEngine()
+
     # Step 1: Parse NL → structured filters
     criteria = _parse_query_with_llm(query, config)
 
@@ -442,16 +479,27 @@ def run_screener(
             suggestion="未找到候选股票，请尝试放宽条件。",
         )
 
-    # Step 3: Fetch data and score each candidate
-    scored: list[tuple[float, dict[str, Any], dict[str, Any]]] = []
+    # Step 3: Fetch data, evaluate through the engine, score each candidate
+    plans = _translate_filters(criteria.filters)
+    engine_filters = [p.engine_filter for p in plans if p.engine_filter is not None]
+    scored: list[tuple[float, dict[str, Any]]] = []
+
     for cand in candidates[:50]:  # Limit to 50 candidates for performance
         ticker = cand["ticker"]
         try:
             stock_data = _fetch_stock_data(ticker, criteria.filters, config)
             stock_data["name"] = cand.get("name", "")
-            score, details = _score_stock(stock_data, criteria.filters)
 
-            # Extract common fields for display
+            row = _build_row(stock_data, plans)
+            engine_results = iter(engine.evaluate_row(row, engine_filters))
+            matches = [
+                bool(next(engine_results)) if plan.engine_filter is not None
+                else bool(plan.predicate(stock_data))
+                for plan in plans
+            ]
+
+            score, details = _score_stock(plans, matches, stock_data)
+
             pe = stock_data.get("profit_forecast", {}).get("pe_ttm")
             item = ScreenerResultItem(
                 ticker=ticker,
@@ -460,14 +508,14 @@ def run_screener(
                 score=score,
                 match_details=details,
             )
-            scored.append((score, stock_data, item.model_dump()))
+            scored.append((score, item.model_dump()))
         except Exception as exc:
             logger.debug("Error scoring %s: %s", ticker, exc)
 
     # Step 4: Sort and limit
     scored.sort(key=lambda x: x[0], reverse=not criteria.ascending)
     results = []
-    for score, stock_data, item_dict in scored[:max_results]:
+    for score, item_dict in scored[:max_results]:
         item = ScreenerResultItem(**item_dict)
         item.score = score
         results.append(item)
@@ -481,6 +529,63 @@ def run_screener(
             f"排名前三：{', '.join(top_names)}。"
             f"建议结合技术面和基本面进一步分析。"
         )
+
+    return ScreenerResponse(
+        query=query,
+        parsed_criteria=criteria,
+        results=results,
+        count=len(results),
+        suggestion=suggestion,
+    )
+
+
+def run_template_screener(
+    template_id: str,
+    max_results: int = 20,
+) -> ScreenerResponse:
+    """Run one of the engine's preset screening templates.
+
+    The template runs against the engine's own stock pool with the engine's
+    50-field vocabulary — the engine is fully in charge here.
+    """
+    engine = ScreenerEngine()
+    template = engine.get_template(template_id)
+
+    query = template.name if template else template_id
+    criteria = ScreenerCriteria()
+
+    if template is None:
+        return ScreenerResponse(
+            query=query,
+            parsed_criteria=criteria,
+            results=[],
+            count=0,
+            suggestion=f"未知选股模板：{template_id}。可用模板可从 GET 模板列表获取。",
+        )
+
+    engine_results = engine.run_template(template_id, limit=max_results)
+    results = [
+        ScreenerResultItem(
+            ticker=r.ticker,
+            name=r.name,
+            pe=r.data.get("pe_ratio"),
+            score=round(r.score, 1),
+            match_details={"matched_filters": r.matched_filters, "data": {
+                k: v for k, v in r.data.items() if not str(k).startswith("_")
+            }},
+        )
+        for r in engine_results
+    ]
+
+    suggestion = ""
+    if results:
+        top_names = [r.name or r.ticker for r in results[:3]]
+        suggestion = (
+            f"模板「{template.name}」命中 {len(results)} 只。"
+            f"排名前三：{', '.join(top_names)}。"
+        )
+    else:
+        suggestion = f"模板「{template.name}」未命中候选股票。"
 
     return ScreenerResponse(
         query=query,

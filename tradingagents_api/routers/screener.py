@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from ..schemas import ScreenerRequest
-from ..screener import ScreenerResponse, run_screener
+from ..screener import ScreenerResponse, run_screener, run_template_screener
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -23,6 +23,11 @@ async def post_screener(request: ScreenerRequest):
     from tradingagents.default_config import DEFAULT_CONFIG
 
     try:
+        if request.template_id:
+            return run_template_screener(
+                template_id=request.template_id,
+                max_results=request.max_results,
+            )
         config = dict(DEFAULT_CONFIG)
         return run_screener(
             query=request.query,
