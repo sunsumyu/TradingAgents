@@ -1,0 +1,3 @@
+@echo off
+echo Starting PowerShell without Profile...
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "cd 'F:\chain\TradingAgents'; python start_gui.py"
