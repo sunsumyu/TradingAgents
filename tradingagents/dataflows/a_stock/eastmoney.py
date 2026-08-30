@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 _DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 _EM_SESSION = _requests.Session()
 _EM_SESSION.headers.update({"User-Agent": _UA})
+# Bypass proxy for eastmoney domains (system proxy may be broken)
+_EM_SESSION.trust_env = False
 _EM_MIN_INTERVAL = float(os.environ.get("EM_MIN_INTERVAL", "1.0"))
 _em_last_call = [0.0]
 
