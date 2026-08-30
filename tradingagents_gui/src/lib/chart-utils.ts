@@ -293,3 +293,38 @@ export function computeCCI(data: KlineData, period = 20): (number | null)[] {
   }
   return out;
 }
+
+// ── Intraday timeline helpers ──────────────────────────────────────────────
+
+/**
+ * Volume-Weighted Average Price (VWAP) for intraday timeline.
+ * VWAP[i] = Σ(close[0..i] × volume[0..i]) / Σ(volume[0..i]).
+ * Returns a series the same length as the input; null when volume is zero.
+ */
+export function computeVwap(
+  closes: number[],
+  volumes: number[],
+): (number | null)[] {
+  const n = Math.min(closes.length, volumes.length);
+  if (n === 0) return [];
+  const out: (number | null)[] = new Array(n);
+  let cumPV = 0;
+  let cumVol = 0;
+  for (let i = 0; i < n; i++) {
+    const v = volumes[i];
+    if (!Number.isFinite(v) || v <= 0) {
+      // No volume — carry forward previous VWAP or null
+      out[i] = cumVol > 0 ? cumPV / cumVol : null;
+      continue;
+    }
+    const c = closes[i];
+    if (!Number.isFinite(c)) {
+      out[i] = cumVol > 0 ? cumPV / cumVol : null;
+      continue;
+    }
+    cumPV += c * v;
+    cumVol += v;
+    out[i] = cumPV / cumVol;
+  }
+  return out;
+}

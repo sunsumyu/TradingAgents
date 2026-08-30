@@ -10,7 +10,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { Loader2, Camera, Image, Maximize2, Minimize2 } from "lucide-react";
+import { Loader2, Camera, Image, Maximize2, Minimize2, Activity, CandlestickChart } from "lucide-react";
 import { api } from "../../lib/api";
 import type { MacdData, RsiData, BollingerData } from "../../lib/types";
 import { useChartStore } from "../../lib/useChartStore";
@@ -19,6 +19,7 @@ import { usePriceAlerts } from "../../lib/usePriceAlerts";
 import type { CrosshairInfo, Timeframe } from "./types";
 import { TIMEFRAME_DAYS, isMinuteTimeframe } from "./types";
 import TradingViewChart from "./TradingViewChart";
+import IntradayTimeline from "./IntradayTimeline";
 import ChartHeader from "./ChartHeader";
 import MultiChartLayout from "./MultiChartLayout";
 import AlertPanel from "../astock/AlertPanel";
@@ -85,6 +86,13 @@ export default function TradingViewLayout({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isReplayVisible, setIsReplayVisible] = useState(false);
   const replayAbortRef = useRef<AbortController | null>(null);
+
+  // Chart mode: "kline" for candlestick, "timeline" for intraday price line.
+  // Auto-set to "timeline" when a minute timeframe is selected.
+  const [chartMode, setChartMode] = useState<"kline" | "timeline">(
+    isMinuteTimeframe(timeframe) ? "timeline" : "kline",
+  );
+  const isTimeline = chartMode === "timeline";
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -245,6 +253,8 @@ export default function TradingViewLayout({
       abortRef.current = controller;
 
       storeSetTimeframe(tf);
+      // Auto-switch chart mode based on timeframe
+      setChartMode(isMinuteTimeframe(tf) ? "timeline" : "kline");
       storeSetLoading(true);
       storeSetLoadError(null);
 
@@ -439,12 +449,19 @@ export default function TradingViewLayout({
           <div className="flex flex-col h-full">
             <TimeframeSelector current={timeframe} onChange={handleTimeframeChange} />
             <div className="flex-1 min-h-0 relative">
-              <TradingViewChart
-                data={kline}
-                activeOverlays={activeOverlays}
-                activeTool={activeTool}
-                onCrosshairMove={handleCrosshairMove}
-              />
+              {isTimeline ? (
+                <IntradayTimeline
+                  data={kline}
+                  prevClose={kline?.ohlc?.length ? kline.ohlc[0][0] : null}
+                />
+              ) : (
+                <TradingViewChart
+                  data={kline}
+                  activeOverlays={activeOverlays}
+                  activeTool={activeTool}
+                  onCrosshairMove={handleCrosshairMove}
+                />
+              )}
             </div>
           </div>
           {isLoading && (
@@ -524,22 +541,38 @@ export default function TradingViewLayout({
             </button>
             <button
               onClick={() => setIsFullscreen(true)}
-              className="p-1.5 mr-1 rounded hover:bg-[#2A2E39] transition-colors shrink-0"
+              className="p-1.5 rounded hover:bg-[#2A2E39] transition-colors shrink-0"
               title="全屏图表 (ESC 退出)"
             >
               <Maximize2 size={14} className="text-[#787B86]" />
+            </button>
+            <button
+              onClick={() => setChartMode(isTimeline ? "kline" : "timeline")}
+              className="p-1.5 mr-1 rounded hover:bg-[#2A2E39] transition-colors shrink-0"
+              title={isTimeline ? "切换到K线图" : "切换到分时图"}
+            >
+              {isTimeline
+                ? <CandlestickChart size={14} className="text-[#787B86]" />
+                : <Activity size={14} className="text-[#787B86]" />}
             </button>
           </div>
 
           {/* Main chart with loading overlay */}
           <div ref={chartAreaRef} className="flex-1 min-h-0 relative" data-chart-area>
-            <TradingViewChart
-              data={kline}
-              activeOverlays={activeOverlays}
-              activeTool={activeTool}
-              onCrosshairMove={handleCrosshairMove}
-              maSeries={maSeries}
-            />
+            {isTimeline ? (
+              <IntradayTimeline
+                data={kline}
+                prevClose={kline?.ohlc?.length ? kline.ohlc[0][0] : null}
+              />
+            ) : (
+              <TradingViewChart
+                data={kline}
+                activeOverlays={activeOverlays}
+                activeTool={activeTool}
+                onCrosshairMove={handleCrosshairMove}
+                maSeries={maSeries}
+              />
+            )}
 
             {/* Loading overlay */}
             {isLoading && (

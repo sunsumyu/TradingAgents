@@ -5,6 +5,7 @@ import {
   computeRsiSeries,
   computeWR,
   computeCCI,
+  computeVwap,
   sanitizePeriod,
   getLatestIndicatorValue,
 } from "./chart-utils";
@@ -279,5 +280,64 @@ describe("getLatestIndicatorValue", () => {
     const data = makeKline([[10, 20, 5, 30]]);
     (data as any).ma5 = [10, null];
     expect(getLatestIndicatorValue(data, "ma5")).toBe("—");
+  });
+});
+
+// ── computeVwap ───────────────────────────────────────────────────────────
+
+describe("computeVwap", () => {
+  it("empty input returns empty array", () => {
+    expect(computeVwap([], [])).toEqual([]);
+  });
+
+  it("first bar = first close when volume > 0", () => {
+    const result = computeVwap([10.5], [1000]);
+    expect(result[0]).toBeCloseTo(10.5, 10);
+  });
+
+  it("computes cumulative PV / cumulative volume", () => {
+    const closes = [10, 20, 30];
+    const volumes = [100, 200, 300];
+    const result = computeVwap(closes, volumes);
+    // bar 0: 10*100/100 = 10
+    expect(result[0]).toBeCloseTo(10, 10);
+    // bar 1: (10*100 + 20*200)/(100+200) = 5000/300 = 16.666...
+    expect(result[1]).toBeCloseTo(16.6667, 4);
+    // bar 2: (10*100 + 20*200 + 30*300)/(100+200+300) = 14000/600 = 23.333...
+    expect(result[2]).toBeCloseTo(23.3333, 4);
+  });
+
+  it("zero volume carries forward previous VWAP", () => {
+    const closes = [10, 20, 30];
+    const volumes = [100, 0, 200];
+    const result = computeVwap(closes, volumes);
+    // bar 0: 10*100/100 = 10
+    expect(result[0]).toBeCloseTo(10, 10);
+    // bar 1: volume=0 → carry forward 10
+    expect(result[1]).toBeCloseTo(10, 10);
+    // bar 2: (10*100 + 30*200)/(100+200) = 7000/300 = 23.333...
+    expect(result[2]).toBeCloseTo(23.3333, 4);
+  });
+
+  it("all zero volumes → all null", () => {
+    const result = computeVwap([10, 20, 30], [0, 0, 0]);
+    expect(result.every((v) => v === null)).toBe(true);
+  });
+
+  it("handles NaN closes gracefully", () => {
+    const closes = [10, NaN, 30];
+    const volumes = [100, 100, 100];
+    const result = computeVwap(closes, volumes);
+    expect(result[0]).toBeCloseTo(10, 10);
+    // NaN close → carry forward previous VWAP (no cumPV update)
+    expect(result[1]).toBeCloseTo(10, 10);
+    // bar 2: (10*100 + 30*100)/200 = 20
+    expect(result[2]).toBeCloseTo(20, 10);
+  });
+
+  it("output length = min(closes.length, volumes.length)", () => {
+    expect(computeVwap([10, 20], [100]).length).toBe(1);
+    expect(computeVwap([10], [100, 200]).length).toBe(1);
+    expect(computeVwap([10, 20], [100, 200]).length).toBe(2);
   });
 });
