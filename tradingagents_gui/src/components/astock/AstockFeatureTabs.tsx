@@ -20,6 +20,7 @@ import type {
   ChipDistributionData,
   ConceptBlocksData,
   DragonTigerData,
+  FinancialStatementData,
   HotStocksData,
   LockupExpiryData,
   NorthboundData,
@@ -33,6 +34,7 @@ import ConceptPanel from "./ConceptPanel";
 import ProfitForecastPanel from "./ProfitForecastPanel";
 import LockupPanel from "./LockupPanel";
 import HotStockPanel from "./HotStockPanel";
+import FinancialStatementPanel from "./FinancialStatementPanel";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -181,6 +183,9 @@ function FeatureRenderer({ feature, data }: { feature: AstockFeatureKey; data: A
   }
   if (feature === "hot_stocks") {
     return <HotStockPanel data={data.data as unknown as HotStocksData} rawMd={data.raw_md} />;
+  }
+  if (feature === "balance_sheet" || feature === "income_statement" || feature === "cashflow") {
+    return <FinancialStatementPanel feature={feature} data={data.data as unknown as FinancialStatementData} rawMd={data.raw_md} />;
   }
   // All other features: raw_md fallback
   return (

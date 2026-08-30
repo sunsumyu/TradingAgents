@@ -16,6 +16,7 @@ from tradingagents_api.astock_features import (
     _parse_profit_forecast,
     _parse_lockup_expiry,
     _parse_hot_stocks,
+    _parse_financial_csv,
 )
 
 TICKER = "600519"
@@ -282,3 +283,74 @@ class TestHotStocks:
         result = _parse_hot_stocks("# Hot Stocks\n# 共 0 只", TICKER, DATE, {})
         assert result["items"] == []
         assert result["total"] == 0
+
+
+# ── Financial CSV fixtures ────────────────────────────────────────────────
+
+BALANCE_SHEET_MD = """\
+# Balance Sheet for 600519 (A-stock, quarterly)
+# Data source: sina direct HTTP
+# Data retrieved on: 2026-08-26 14:30:00
+报告日,资产合计,负债合计,股东权益合计
+2026-06-30,312456789.00,123456789.00,189000000.00
+2026-03-31,305000000.00,120000000.00,185000000.00
+2025-12-31,298000000.00,118000000.00,180000000.00
+"""
+
+INCOME_STATEMENT_MD = """\
+# Income Statement for 600519 (A-stock, quarterly)
+# Data source: sina direct HTTP
+报告日,营业收入,营业成本,净利润
+2026-06-30,789000000.00,234000000.00,356000000.00
+2026-03-31,380000000.00,115000000.00,168000000.00
+"""
+
+CASHFLOW_MD = """\
+# Cashflow for 600519 (A-stock, quarterly)
+# Data source: sina direct HTTP
+报告日,经营活动产生的现金流量净额,投资活动产生的现金流量净额,筹资活动产生的现金流量净额
+2026-06-30,123000000.00,-45000000.00,-30000000.00
+2026-03-31,56000000.00,-20000000.00,-15000000.00
+2025-12-31,210000000.00,-80000000.00,-60000000.00
+"""
+
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+
+class TestParseFinancialCSV:
+    def test_balance_sheet_structure(self):
+        result = _parse_financial_csv(BALANCE_SHEET_MD, TICKER, DATE, {})
+        assert result["periods"] == ["2026-06-30", "2026-03-31", "2025-12-31"]
+        assert result["columns"] == ["资产合计", "负债合计", "股东权益合计"]
+
+    def test_balance_sheet_values(self):
+        result = _parse_financial_csv(BALANCE_SHEET_MD, TICKER, DATE, {})
+        assert result["items"]["资产合计"][0] == pytest.approx(312456789.00)
+        assert result["items"]["负债合计"][2] == pytest.approx(118000000.00)
+        assert result["items"]["股东权益合计"][1] == pytest.approx(185000000.00)
+
+    def test_income_statement(self):
+        result = _parse_financial_csv(INCOME_STATEMENT_MD, TICKER, DATE, {})
+        assert len(result["periods"]) == 2
+        assert "营业收入" in result["columns"]
+        assert result["items"]["净利润"][0] == pytest.approx(356000000.00)
+
+    def test_cashflow(self):
+        result = _parse_financial_csv(CASHFLOW_MD, TICKER, DATE, {})
+        assert len(result["periods"]) == 3
+        assert result["items"]["经营活动产生的现金流量净额"][0] == pytest.approx(123000000.00)
+        assert result["items"]["投资活动产生的现金流量净额"][0] == pytest.approx(-45000000.00)
+
+    def test_empty_string(self):
+        result = _parse_financial_csv("", TICKER, DATE, {})
+        assert result == {"periods": [], "columns": [], "items": {}}
+
+    def test_no_report_date_column(self):
+        md = "col1,col2\n1,2\n"
+        result = _parse_financial_csv(md, TICKER, DATE, {})
+        assert result == {"periods": [], "columns": [], "items": {}}
+
+    def test_comments_skipped(self):
+        result = _parse_financial_csv(BALANCE_SHEET_MD, TICKER, DATE, {})
+        # Should not include comment lines in periods
+        assert all(p.startswith("20") for p in result["periods"])

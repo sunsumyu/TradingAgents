@@ -540,6 +540,13 @@ export interface HotStocksData {
   total: number;
 }
 
+/** Structured financial statement data (balance_sheet / income_statement / cashflow). */
+export interface FinancialStatementData {
+  periods: string[];                        // ["2026-06-30", "2026-03-31", ...]
+  columns: string[];                        // ["资产合计", "负债合计", ...]
+  items: Record<string, (number | null)[]>; // column → per-period values
+}
+
 /** All known feature keys — used for tabs, dispatch, and availability checks. */
 export type AstockFeatureKey =
   | "chip_distribution"

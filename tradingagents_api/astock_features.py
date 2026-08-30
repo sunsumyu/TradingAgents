@@ -208,6 +208,67 @@ def _passthrough_parser(md: str, ticker: str, date: str, params: dict[str, Any])
     return {}
 
 
+def _parse_financial_csv(
+    md: str, ticker: str, date: str, params: dict[str, Any]
+) -> dict[str, Any]:
+    """Parse CSV-formatted financial report from raw_md.
+
+    The raw_md from ``sina_finance`` looks like::
+
+        # Balance Sheet for 600519 (A-stock, quarterly)
+        # Data source: sina direct HTTP
+        # Data retrieved on: 2026-08-26 14:30:00
+        报告日,资产合计,负债合计,股东权益合计,...
+        2026-06-30,312456789.00,123456789.00,...
+        2026-03-31,305000000.00,120000000.00,...
+
+    Returns::
+
+        {
+            "periods": ["2026-06-30", "2026-03-31", ...],
+            "columns": ["资产合计", "负债合计", ...],
+            "items": {"资产合计": [312456789.0, ...], ...}
+        }
+    """
+    if not md or not md.strip():
+        return {"periods": [], "columns": [], "items": {}}
+
+    lines = md.strip().splitlines()
+    header_idx = -1
+    for i, line in enumerate(lines):
+        if "报告日" in line and not line.startswith("#"):
+            header_idx = i
+            break
+
+    if header_idx < 0:
+        return {"periods": [], "columns": [], "items": {}}
+
+    cols = [c.strip().strip('"') for c in lines[header_idx].split(",")]
+    if not cols or cols[0] != "报告日":
+        return {"periods": [], "columns": [], "items": {}}
+
+    data_cols = cols[1:]
+    periods: list[str] = []
+    items: dict[str, list[float | None]] = {c: [] for c in data_cols}
+
+    for line in lines[header_idx + 1 :]:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip().strip('"') for p in line.split(",")]
+        if len(parts) < 2:
+            continue
+        periods.append(parts[0])
+        for j, col in enumerate(data_cols):
+            val_str = parts[j + 1] if j + 1 < len(parts) else ""
+            try:
+                items[col].append(float(val_str) if val_str else None)
+            except (ValueError, TypeError):
+                items[col].append(None)
+
+    return {"periods": periods, "columns": data_cols, "items": items}
+
+
 def _parse_chip_distribution(
     md: str, ticker: str, date: str, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -735,15 +796,15 @@ def _build_feature_table() -> dict[str, dict[str, Any]]:
         "insider_transactions": {"call": _call_insider, "parse": _passthrough_parser},
         "balance_sheet": {
             "call": _make_financial(get_balance_sheet),
-            "parse": _passthrough_parser,
+            "parse": _parse_financial_csv,
         },
         "cashflow": {
             "call": _make_financial(get_cashflow),
-            "parse": _passthrough_parser,
+            "parse": _parse_financial_csv,
         },
         "income_statement": {
             "call": _make_financial(get_income_statement),
-            "parse": _passthrough_parser,
+            "parse": _parse_financial_csv,
         },
     }
 
