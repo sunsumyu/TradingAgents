@@ -15,7 +15,7 @@ from collections import Counter
 import pandas as pd
 import requests as _requests
 
-from .utils import _UA, normalize_ticker, is_historical, snapshot_notice
+from .utils import _UA, normalize_ticker, is_historical, snapshot_notice, no_proxy_get
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _ths_eps_forecast(code: str) -> pd.DataFrame:
         "Referer": "https://basic.10jqka.com.cn/",
     }
     try:
-        r = _requests.get(url, headers=headers, timeout=15)
+        r = no_proxy_get(url, headers=headers, timeout=15)
         r.encoding = "gbk"
         dfs = pd.read_html(io.StringIO(r.text))
         for df in dfs:
@@ -147,7 +147,7 @@ def get_hot_stocks(
                 "Chrome/117.0.0.0 Safari/537.36"
             )
         }
-        r = _requests.get(url, headers=headers, timeout=10)
+        r = no_proxy_get(url, headers=headers, timeout=10)
         data = r.json()
 
         if data.get("errocode", 0) != 0:

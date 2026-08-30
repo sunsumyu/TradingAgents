@@ -15,7 +15,7 @@ from datetime import datetime
 import pandas as pd
 import requests as _requests
 
-from .utils import _UA, get_prefix, normalize_ticker
+from .utils import _UA, get_prefix, normalize_ticker, no_proxy_get
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def sina_kline_fallback(code: str, start_date: str = None, end_date: str = None)
         "ma": "no",
         "datalen": "800",
     }
-    r = _requests.get(url, params=params, timeout=15)
+    r = no_proxy_get(url, params=params, timeout=15)
     r.raise_for_status()
     data = _json.loads(r.text)
 
@@ -91,7 +91,7 @@ def _get_financial_report_sina(
         "page": "1",
         "num": "20",
     }
-    r = _requests.get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
+    r = no_proxy_get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
     d = r.json()
 
     result = d.get("result", {}).get("data", {})
@@ -188,7 +188,7 @@ def _fetch_news_sina(code: str, page_size: int = 20) -> list[dict]:
         "Referer": "https://finance.sina.com.cn/",
     }
 
-    resp = _requests.get(url, headers=headers, timeout=15)
+    resp = no_proxy_get(url, headers=headers, timeout=15)
     resp.raise_for_status()
     resp.encoding = "gb2312"
     html = resp.text

@@ -13,6 +13,7 @@ from typing import Annotated
 from datetime import datetime
 
 import requests as _requests
+from .utils import no_proxy_get
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ def get_northbound_flow(
 
     try:
         url_rt = "https://data.hexin.cn/market/hsgtApi/method/dayChart/"
-        r = _requests.get(url_rt, headers=hsgt_headers, timeout=10)
+        r = no_proxy_get(url_rt, headers=hsgt_headers, timeout=10)
         d = r.json()
 
         times = d.get("time", [])

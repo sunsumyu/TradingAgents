@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import logging
+import os
 import re
 
 import pandas as pd
+import requests as _requests
 
 from ..errors import NoMarketDataError
 from ..utils import safe_ticker_component
@@ -22,6 +24,24 @@ logger = logging.getLogger(__name__)
 
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 _HEADERS = {"User-Agent": _UA}
+
+
+# ---------------------------------------------------------------------------
+# Proxy bypass helper
+# ---------------------------------------------------------------------------
+
+def no_proxy_get(url: str, **kwargs) -> _requests.Response:
+    """Make a GET request bypassing system proxy (for A-stock vendor APIs).
+
+    System proxy (e.g. Clash) may be broken or unnecessary for direct
+    connections to Chinese financial data APIs.
+    """
+    kwargs.setdefault("timeout", 15)
+    kwargs.setdefault("headers", _HEADERS)
+    # Create a fresh session that ignores system proxy settings
+    with _requests.Session() as s:
+        s.trust_env = False
+        return s.get(url, **kwargs)
 
 # A 股市场时区
 _MARKET_TZ = timezone(timedelta(hours=8))

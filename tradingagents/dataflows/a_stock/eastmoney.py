@@ -22,6 +22,7 @@ from .utils import (
     normalize_ticker,
     is_historical,
     market_today,
+    no_proxy_get,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,14 +41,17 @@ _em_last_call = [0.0]
 
 
 def _em_get(url, params=None, headers=None, timeout=15, **kwargs):
-    """东财统一请求入口：自动节流 + 复用 session + 默认 UA。"""
+    """东财统一请求入口：自动节流 + 绕过系统代理 + 默认 UA。"""
     wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
     if wait > 0:
         time.sleep(wait + random.uniform(0.1, 0.5))
+    merged_headers = {**_EM_SESSION.headers}
+    if headers:
+        merged_headers.update(headers)
     try:
-        return _EM_SESSION.get(
-            url, params=params, headers=headers, timeout=timeout, **kwargs
-        )
+        with _requests.Session() as s:
+            s.trust_env = False
+            return s.get(url, params=params, headers=merged_headers, timeout=timeout, **kwargs)
     finally:
         _em_last_call[0] = time.time()
 
@@ -111,7 +115,7 @@ def get_concept_blocks(
             f'?stock=[{{"code":"{code}","market":"ab","type":"stock"}}]'
             "&finClientType=pc"
         )
-        r = _requests.get(url, headers=_BAIDU_PAE_HEADERS, timeout=10)
+        r = no_proxy_get(url, headers=_BAIDU_PAE_HEADERS, timeout=10)
         d = r.json()
 
         if str(d.get("ResultCode", -1)) != "0":
@@ -586,7 +590,7 @@ def get_global_news(
         cls_url = "https://www.cls.cn/nodeapi/telegraphList"
         cls_params = {"rn": str(limit), "page": "1"}
         cls_headers = {"User-Agent": _UA, "Referer": "https://www.cls.cn/"}
-        r_cls = _requests.get(cls_url, params=cls_params, headers=cls_headers, timeout=10)
+        r_cls = no_proxy_get(cls_url, params=cls_params, headers=cls_headers, timeout=10)
         d_cls = r_cls.json()
         for item in d_cls.get("data", {}).get("roll_data", []):
             title = item.get("title", "") or item.get("brief", "")
