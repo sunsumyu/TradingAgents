@@ -215,9 +215,8 @@ def get_news(
     start_date: Annotated[str, "Start date yyyy-mm-dd"],
     end_date: Annotated[str, "End date yyyy-mm-dd"],
 ) -> str:
-    """Get stock-specific news via East Money direct API (Sina as fallback)."""
+    """Get stock-specific news via Sina Finance API (East Money news is global, not stock-specific)."""
     code = normalize_ticker(ticker)
-    from .eastmoney import _fetch_news_eastmoney
 
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
@@ -226,17 +225,10 @@ def get_news(
     source_label = ""
 
     try:
-        articles = _fetch_news_eastmoney(code)
-        source_label = "东方财富"
+        articles = _fetch_news_sina(code)
+        source_label = "新浪财经"
     except Exception as e:
-        logger.warning("East Money news fetch failed for %s: %s", code, e)
-
-    if not articles:
-        try:
-            articles = _fetch_news_sina(code)
-            source_label = "新浪财经"
-        except Exception as e:
-            logger.warning("Sina news fetch failed for %s: %s", code, e)
+        logger.warning("Sina news fetch failed for %s: %s", code, e)
 
     if not articles:
         return f"No news found for A-stock '{code}'"

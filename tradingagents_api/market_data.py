@@ -99,7 +99,7 @@ def _fetch_news(ticker: str, date: str) -> list[NewsItem]:
         text = None
         try:
             from tradingagents.dataflows.a_stock import get_news as astock_news
-            raw = astock_news(ticker, date)
+            raw = astock_news(ticker, start_date, date)
             if isinstance(raw, list):
                 # A-stock vendor returns list of dicts with title/summary/link
                 items = []
