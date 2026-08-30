@@ -51,6 +51,24 @@ export default function MarketDataPanel() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* ── Top Bar with back button (always shown) ── */}
+      <div className="h-11 shrink-0 border-b border-[#2B2B43] flex items-center px-5">
+        <button className="btn-ghost" onClick={() => navigateTo("config")}>
+          <ArrowLeft size={13} />
+          返回配置
+        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[11px] text-[#787B86]">{data.date}</span>
+          <button
+            className="btn-primary"
+            onClick={() => startAnalysis(config)}
+          >
+            <Play size={13} />
+            开始分析
+          </button>
+        </div>
+      </div>
+
       {/* ── TradingView Chart (full screen when chart data exists) ── */}
       {hasAnyChart ? (
         <div className="flex flex-col flex-1 min-h-0">
@@ -66,32 +84,6 @@ export default function MarketDataPanel() {
         </div>
       ) : (
         <>
-          {/* ── Top Bar (no chart) ── */}
-          <div className="h-11 shrink-0 border-b border-[#363A45] flex items-center px-5">
-            <button className="btn-ghost" onClick={() => navigateTo("config")}>
-              <ArrowLeft size={13} />
-              返回配置
-            </button>
-            <h1 className="text-[18px] font-semibold text-[#D1D4DC] ml-3">
-              {data.ticker}
-              {data.fundamentals?.name && (
-                <span className="text-[13px] text-[#787B86] font-normal ml-2">
-                  {data.fundamentals.name}
-                </span>
-              )}
-            </h1>
-            <div className="ml-auto flex items-center gap-2">
-              <span className="text-[11px] text-[#787B86]">{data.date}</span>
-              <button
-                className="btn-primary"
-                onClick={() => startAnalysis(config)}
-              >
-                <Play size={13} />
-                开始分析
-              </button>
-            </div>
-          </div>
-
           {/* ── Scrollable Content (no chart) ── */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {data.fundamentals && <FundamentalCards data={data.fundamentals} />}

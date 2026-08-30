@@ -27,14 +27,21 @@ def _ths_eps_forecast(code: str) -> pd.DataFrame:
         "User-Agent": _UA,
         "Referer": "https://basic.10jqka.com.cn/",
     }
-    r = _requests.get(url, headers=headers, timeout=15)
-    r.encoding = "gbk"
-    dfs = pd.read_html(io.StringIO(r.text))
-    for df in dfs:
-        cols = [str(c) for c in df.columns]
-        if any("每股收益" in c or "均值" in c for c in cols):
-            return df
-    return dfs[0] if dfs else pd.DataFrame()
+    try:
+        r = _requests.get(url, headers=headers, timeout=15)
+        r.encoding = "gbk"
+        dfs = pd.read_html(io.StringIO(r.text))
+        for df in dfs:
+            cols = [str(c) for c in df.columns]
+            if any("每股收益" in c or "均值" in c for c in cols):
+                return df
+        return dfs[0] if dfs else pd.DataFrame()
+    except ValueError:
+        # pd.read_html raises ValueError when no tables found
+        return pd.DataFrame()
+    except Exception as e:
+        logger.warning("Failed to fetch EPS forecast for %s: %s", code, e)
+        return pd.DataFrame()
 
 
 def get_profit_forecast(
