@@ -103,8 +103,12 @@ SCREENER_SYSTEM_PROMPT = """\
 - lockup_expiry: 解禁（未来有解禁 / 无解禁）
 - pe_ratio: 市盈率（< N / > N）
 - market_cap: 市值（> N亿 / < N亿）
-- industry: 行业（消费/科技/金融/医药/新能源 等）
+- industry: 行业（消费/科技/金融/医药/新能源/半导体 等）
 - change_pct: 涨跌幅（> N% / < N%）
+- roe: 净资产收益率 ROE（> N% / < N%）
+- eps: 每股收益（> N / < N）
+- dividend_yield: 股息率（> N% / < N%）
+- pb_ratio: 市净率（< N / > N）
 
 运算符（operator）：
 >, <, >=, <=, =, in, matches, contains, 连续加仓, net_buy
@@ -124,12 +128,91 @@ SCREENER_SYSTEM_PROMPT = """\
 - 行业关键词映射到 industry field，operator="in"
 - 如果用户没有明确排序要求，sort_by 设为 null
 - 如果条件不涉及某个数据源，不要添加对应的filter
+- 组合条件（如"市值大于500亿、ROE超15%的半导体股"）应拆分为多个独立filter
+- 所有条件之间默认为"且"（AND）关系
 """
 
 SCREENER_USER_PROMPT = """\
 选股条件：{query}
 
 请将上述条件解析为JSON过滤器。只输出JSON，不要其他内容。"""
+
+
+# ── Regex fallback parser (used when LLM is unavailable) ──────────────────────
+
+# Available field descriptions for user-facing error messages
+SCREENER_FIELDS_HELP = (
+    "可用筛选字段：pe_ratio(市盈率)、pb_ratio(市净率)、market_cap(市值)、"
+    "roe(净资产收益率)、eps(每股收益)、dividend_yield(股息率)、"
+    "change_pct(涨跌幅)、industry(行业)、"
+    "northbound_flow(北向资金)、hot_stocks(人气榜)、"
+    "concept_blocks(概念板块)、dragon_tiger(龙虎榜)。"
+)
+
+# Regex patterns compiled once at module load
+import re as _re
+
+# Operator pattern: supports both symbolic (<, <=, >, >=, =) and Chinese (大于, 小于, etc.)
+# Capturing group for the operator
+_OP_PAT = r"([<>=!]+|大于|小于|不小于|不大于|等于|不低于|不超过|高于|低于)"
+_OP_MAP = {
+    "<": "<", "<=": "<=", ">": ">", ">=": ">=", "=": "=", "==": "=",
+    "大于": ">", "小于": "<", "不小于": ">=", "不大于": "<=",
+    "等于": "=", "不低于": ">=", "不超过": "<=", "高于": ">", "低于": "<",
+}
+_NUM_PAT = r"([\d.]+)\s*%?"
+
+_PE_RE = _re.compile(r"(?:pe|市盈率)\s*" + _OP_PAT + r"\s*" + _NUM_PAT, _re.IGNORECASE)
+_PB_RE = _re.compile(r"(?:pb|市净率)\s*" + _OP_PAT + r"\s*" + _NUM_PAT, _re.IGNORECASE)
+_ROE_RE = _re.compile(r"(?:roe|净资产收益率)\s*" + _OP_PAT + r"\s*" + _NUM_PAT, _re.IGNORECASE)
+_EPS_RE = _re.compile(r"(?:eps|每股收益)\s*" + _OP_PAT + r"\s*" + _NUM_PAT, _re.IGNORECASE)
+_DIV_RE = _re.compile(r"股息率\s*" + _OP_PAT + r"\s*" + _NUM_PAT, _re.IGNORECASE)
+_MCAP_RE = _re.compile(r"市值\s*" + _OP_PAT + r"\s*([\d.]+)\s*亿?")
+_CHG_RE = _re.compile(r"(?:涨幅|涨跌幅)\s*" + _OP_PAT + r"\s*" + _NUM_PAT, _re.IGNORECASE)
+
+_INDUSTRY_KEYWORDS = {
+    "消费": "消费", "科技": "科技", "金融": "金融", "医药": "医药",
+    "新能源": "新能源", "半导体": "半导体", "白酒": "白酒",
+    "银行": "银行", "地产": "地产", "房地产": "地产",
+    "军工": "军工", "汽车": "汽车", "电子": "电子",
+    "计算机": "计算机", "通信": "通信", "传媒": "传媒",
+}
+
+
+def _parse_query_regex(query: str) -> ScreenerCriteria:
+    """Regex fallback parser when LLM is unavailable or fails.
+
+    Extracts simple numeric conditions from Chinese NL queries.
+    """
+    filters: list[ScreenerFilter] = []
+
+    for regex, field in [
+        (_PE_RE, "pe_ratio"),
+        (_PB_RE, "pb_ratio"),
+        (_ROE_RE, "roe"),
+        (_EPS_RE, "eps"),
+        (_DIV_RE, "dividend_yield"),
+        (_MCAP_RE, "market_cap"),
+        (_CHG_RE, "change_pct"),
+    ]:
+        m = regex.search(query)
+        if m:
+            op_raw = m.group(1)
+            op = _OP_MAP.get(op_raw, op_raw)
+            val_str = m.group(2)
+            try:
+                val = float(val_str)
+            except ValueError:
+                continue
+            filters.append(ScreenerFilter(field=field, operator=op, value=val))
+
+    # Industry keywords
+    for kw, mapped in _INDUSTRY_KEYWORDS.items():
+        if kw in query:
+            filters.append(ScreenerFilter(field="industry", operator="in", value=mapped))
+            break  # only one industry filter
+
+    return ScreenerCriteria(filters=filters)
 
 
 # ── LLM parsing ──────────────────────────────────────────────────────────────
@@ -169,6 +252,11 @@ def _parse_query_with_llm(query: str, config: dict[str, Any]) -> ScreenerCriteri
         )
     except Exception as exc:
         logger.warning("LLM parse failed for query '%s': %s", query, exc)
+        # Fall back to regex parser
+        fallback = _parse_query_regex(query)
+        if fallback.filters:
+            logger.info("Regex fallback parsed %d filters for '%s'", len(fallback.filters), query)
+            return fallback
         return ScreenerCriteria()
 
 
@@ -461,7 +549,7 @@ def run_screener(
             parsed_criteria=criteria,
             results=[],
             count=0,
-            suggestion="无法解析选股条件，请尝试更具体的描述，例如「PE<20的消费股」。",
+            suggestion=f"无法解析选股条件。{SCREENER_FIELDS_HELP}请尝试如「PE<20的消费股」「市值>500亿且ROE>15%」。",
         )
 
     # Step 2: Get candidate stocks

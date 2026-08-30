@@ -292,3 +292,81 @@ class TestLLMParsing:
         again = screener_service._parse_query_with_llm("PE<20", config)
         assert again.filters[0].field == "pe_ratio"
         assert calls["n"] == 1
+
+
+class TestRegexFallback:
+    """Tests for the regex fallback parser (ticket #13)."""
+
+    def test_pe_ratio(self):
+        from tradingagents_api.screener import _parse_query_regex
+        result = _parse_query_regex("市盈率小于20")
+        assert len(result.filters) == 1
+        assert result.filters[0].field == "pe_ratio"
+        assert result.filters[0].operator == "<"
+        assert result.filters[0].value == 20.0
+
+    def test_market_cap_with_unit(self):
+        from tradingagents_api.screener import _parse_query_regex
+        result = _parse_query_regex("市值大于500亿")
+        assert len(result.filters) == 1
+        assert result.filters[0].field == "market_cap"
+        assert result.filters[0].value == 500.0
+
+    def test_roe(self):
+        from tradingagents_api.screener import _parse_query_regex
+        result = _parse_query_regex("ROE>15%")
+        assert len(result.filters) == 1
+        assert result.filters[0].field == "roe"
+        assert result.filters[0].value == 15.0
+
+    def test_industry_keyword(self):
+        from tradingagents_api.screener import _parse_query_regex
+        result = _parse_query_regex("半导体股票")
+        assert any(f.field == "industry" and f.value == "半导体" for f in result.filters)
+
+    def test_multiple_conditions(self):
+        from tradingagents_api.screener import _parse_query_regex
+        result = _parse_query_regex("PE<20的消费股 涨幅>5%")
+        fields = {f.field for f in result.filters}
+        assert "pe_ratio" in fields
+        assert "change_pct" in fields
+        assert "industry" in fields
+
+    def test_empty_query(self):
+        from tradingagents_api.screener import _parse_query_regex
+        result = _parse_query_regex("")
+        assert len(result.filters) == 0
+
+    def test_no_match(self):
+        from tradingagents_api.screener import _parse_query_regex
+        result = _parse_query_regex("随便说说")
+        assert len(result.filters) == 0
+
+    def test_llm_failure_falls_back_to_regex(self, monkeypatch):
+        """When LLM raises, regex fallback should parse what it can."""
+        def fail_create(config, **kw):
+            class FailLLM:
+                def invoke(self, *a, **kw):
+                    raise RuntimeError("LLM unavailable")
+            return FailLLM()
+
+        import tradingagents.llm_clients.factory as factory
+        monkeypatch.setattr(factory, "create_quick_llm", fail_create)
+
+        config = {"llm_provider": "openai", "data_cache_dir": "/tmp/test"}
+        criteria = screener_service._parse_query_with_llm("PE<20的消费股", config)
+        # Should have parsed via regex fallback
+        assert len(criteria.filters) >= 1
+        fields = {f.field for f in criteria.filters}
+        assert "pe_ratio" in fields
+
+    def test_suggestion_includes_field_list(self, stubbed, monkeypatch):
+        """Empty parse result should include available fields in suggestion."""
+        monkeypatch.setattr(
+            screener_service, "_parse_query_with_llm",
+            lambda q, c: ScreenerCriteria(),
+        )
+        resp = run_screener("随便", _config())
+        assert resp.count == 0
+        assert "pe_ratio" in resp.suggestion
+        assert "market_cap" in resp.suggestion
