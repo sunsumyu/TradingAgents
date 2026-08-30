@@ -10,7 +10,7 @@
 import { useState, useCallback, useMemo } from "react";
 import type { KlineData, MacdData, RsiData, BollingerData } from "../../lib/types";
 import type { IndicatorParams } from "../../lib/chart-utils";
-import { computeWR, computeCCI, SUB_INDICATORS, type SubIndicatorKey } from "../../lib/chart-utils";
+import { computeWR, computeCCI, computeExpma, computeTD9, SUB_INDICATORS, type SubIndicatorKey } from "../../lib/chart-utils";
 import SubPanelHeader from "./SubPanelHeader";
 import IndicatorParamDialog, { type ParamTarget } from "./IndicatorParamDialog";
 import { SubIndicatorPanel } from "./SubIndicatorMinis";
@@ -51,6 +51,9 @@ function availableIndicators(
   if (kline?.ohlc?.length) {
     avail.add("WR");
     avail.add("CCI");
+    avail.add("EXPMA");
+    avail.add("XSChannel");
+    avail.add("TD9");
   }
   return avail;
 }
@@ -61,6 +64,7 @@ function subIndicatorDetail(
   kline: KlineData | null,
   macd?: MacdData | null,
   rsi?: RsiData | null,
+  params?: IndicatorParams,
 ): string | undefined {
   const last = (arr?: (number | null)[]) => {
     if (!arr || arr.length === 0) return undefined;
@@ -81,6 +85,19 @@ function subIndicatorDetail(
       return kline?.ohlc?.length ? last(computeWR(kline)) : undefined;
     case "CCI":
       return kline?.ohlc?.length ? last(computeCCI(kline)) : undefined;
+    case "EXPMA": {
+      if (!kline?.ohlc?.length || !params) return undefined;
+      const closes = kline.ohlc.map((r) => r[1]);
+      const { short, long } = computeExpma(closes, params.expma.short, params.expma.long);
+      return `S:${last(short)} L:${last(long)}`;
+    }
+    case "TD9": {
+      if (!kline?.ohlc?.length) return undefined;
+      const { buyCount, sellCount } = computeTD9(kline);
+      const b = last(buyCount);
+      const s = last(sellCount);
+      return b && s ? `B:${b} S:${s}` : b ? `B:${b}` : s ? `S:${s}` : "—";
+    }
     default:
       return undefined;
   }
@@ -119,11 +136,11 @@ export default function SubPanels({
   const details = useMemo(() => {
     const map = new Map<SubIndicatorKey, string>();
     for (const { key } of SUB_INDICATORS) {
-      const d = subIndicatorDetail(key, kline, macd, rsi);
+      const d = subIndicatorDetail(key, kline, macd, rsi, params);
       if (d != null) map.set(key, d);
     }
     return map;
-  }, [kline, macd, rsi]);
+  }, [kline, macd, rsi, params]);
 
   const handleSelect = useCallback((slotIndex: number, key: SubIndicatorKey) => {
     setSlots((prev) => {
@@ -154,7 +171,11 @@ export default function SubPanels({
               available={available}
               detail={details.get(key)}
               onSelect={(k) => handleSelect(i, k)}
-              onOpenParams={key === "MACD" || key === "RSI" ? () => setParamDialog(key) : undefined}
+              onOpenParams={
+                key === "MACD" || key === "RSI" || key === "EXPMA" || key === "XSChannel"
+                  ? () => setParamDialog(key as ParamTarget)
+                  : undefined
+              }
             />
             <SubIndicatorPanel
               indicator={key}
@@ -163,6 +184,7 @@ export default function SubPanels({
               rsi={rsi}
               bollinger={bollinger}
               crosshairTime={crosshairTime}
+              params={params}
             />
           </div>
         ))}

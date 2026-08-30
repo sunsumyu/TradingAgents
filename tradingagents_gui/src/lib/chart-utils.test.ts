@@ -6,6 +6,9 @@ import {
   computeWR,
   computeCCI,
   computeVwap,
+  computeExpma,
+  computeXSChannel,
+  computeTD9,
   sanitizePeriod,
   getLatestIndicatorValue,
 } from "./chart-utils";
@@ -339,5 +342,142 @@ describe("computeVwap", () => {
     expect(computeVwap([10, 20], [100]).length).toBe(1);
     expect(computeVwap([10], [100, 200]).length).toBe(1);
     expect(computeVwap([10, 20], [100, 200]).length).toBe(2);
+  });
+});
+
+// ── computeExpma ─────────────────────────────────────────────────────────
+
+describe("computeExpma", () => {
+  it("returns arrays same length as input", () => {
+    const closes = [10, 11, 12, 13, 14];
+    const { short, long } = computeExpma(closes, 3, 5);
+    expect(short.length).toBe(5);
+    expect(long.length).toBe(5);
+  });
+
+  it("constant input → both EMAs equal to that constant", () => {
+    const flat = new Array(20).fill(100);
+    const { short, long } = computeExpma(flat, 12, 50);
+    expect(short[19]).toBeCloseTo(100, 10);
+    expect(long[19]).toBeCloseTo(100, 10);
+  });
+
+  it("short EMA reacts faster than long EMA to price change", () => {
+    // 10 bars of 10, then jump to 20
+    const closes = [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 20];
+    const { short, long } = computeExpma(closes, 3, 8);
+    // After the jump, short EMA should be closer to 20
+    expect(short[10]).toBeGreaterThan(long[10]);
+  });
+
+  it("single element returns that element", () => {
+    const { short, long } = computeExpma([42], 12, 50);
+    expect(short[0]).toBe(42);
+    expect(long[0]).toBe(42);
+  });
+});
+
+// ── computeXSChannel ─────────────────────────────────────────────────────
+
+describe("computeXSChannel", () => {
+  function makeData(ohlc: [number, number, number, number][]): KlineData {
+    return {
+      dates: ohlc.map((_, i) => `2026-01-${String(i + 1).padStart(2, "0")}`),
+      ohlc,
+      volumes: ohlc.map(() => 1000),
+    };
+  }
+
+  it("upper > lower for typical OHLC data", () => {
+    const ohlc: [number, number, number, number][] = Array.from({ length: 30 }, (_, i) => [
+      100 + i, 100 + i + 1, 95 + i, 105 + i,
+    ]);
+    const data = makeData(ohlc);
+    const { upper, lower } = computeXSChannel(data, 20, 5, 2);
+    for (let i = 19; i < 30; i++) {
+      if (upper[i] != null && lower[i] != null) {
+        expect(upper[i]!).toBeGreaterThan(lower[i]!);
+      }
+    }
+  });
+
+  it("empty data returns empty arrays", () => {
+    const data = makeData([]);
+    const { upper, lower } = computeXSChannel(data, 100, 10, 11);
+    expect(upper).toEqual([]);
+    expect(lower).toEqual([]);
+  });
+
+  it("output length matches input", () => {
+    const ohlc: [number, number, number, number][] = Array.from({ length: 10 }, (_, i) => [
+      100 + i, 100 + i + 1, 99 + i, 101 + i,
+    ]);
+    const data = makeData(ohlc);
+    const { upper, lower } = computeXSChannel(data, 5, 3, 1);
+    expect(upper.length).toBe(10);
+    expect(lower.length).toBe(10);
+  });
+});
+
+// ── computeTD9 ───────────────────────────────────────────────────────────
+
+describe("computeTD9", () => {
+  function makeData(closes: number[]): KlineData {
+    return {
+      dates: closes.map((_, i) => `2026-01-${String(i + 1).padStart(2, "0")}`),
+      ohlc: closes.map((c) => [c, c, c - 1, c + 1]),
+      volumes: closes.map(() => 1000),
+    };
+  }
+
+  it("buy count increments when close < close[i-4]", () => {
+    // Descending: each close < close[i-4]
+    const closes = [20, 19, 18, 17, 16, 15, 14, 13, 12, 11];
+    const { buyCount } = computeTD9(makeData(closes));
+    // First 4 bars are null (no i-4 reference)
+    expect(buyCount[0]).toBeNull();
+    expect(buyCount[3]).toBeNull();
+    // Bar 4: 16 < 20 → buyCount = 1
+    expect(buyCount[4]).toBe(1);
+    // Bar 9: 11 < 16 → buyCount = 6 (bars 4-9 all decrementing)
+    expect(buyCount[9]).toBe(6);
+  });
+
+  it("sell count increments when close > close[i-4]", () => {
+    // Ascending: each close > close[i-4]
+    const closes = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+    const { sellCount } = computeTD9(makeData(closes));
+    expect(sellCount[4]).toBe(1);
+    expect(sellCount[9]).toBe(6);
+  });
+
+  it("resets count when condition breaks", () => {
+    // 4 descending then 1 ascending
+    const closes = [20, 19, 18, 17, 16, 15, 14, 13, 25, 11];
+    const { buyCount, sellCount } = computeTD9(makeData(closes));
+    // Bar 7: 13 < 18 → buyCount = 4
+    expect(buyCount[7]).toBe(4);
+    // Bar 8: 25 > 21 → sellCount = 1, buyCount = 0
+    expect(sellCount[8]).toBe(1);
+    expect(buyCount[8]).toBeNull();
+    // Bar 9: 11 < 25 → buyCount = 1, sellCount = 0
+    expect(buyCount[9]).toBe(1);
+    expect(sellCount[9]).toBeNull();
+  });
+
+  it("9 consecutive declining closes triggers buy signal", () => {
+    const closes = [100, 99, 98, 97, 96, 95, 94, 93, 92, 91, 90, 89, 88];
+    const { buySignals } = computeTD9(makeData(closes));
+    expect(buySignals).toContain(12); // bar 12: 88 < 96, count = 9
+  });
+
+  it("equal close resets both counts", () => {
+    // close[i-4] = 20 at bar 4, so close[4] = 20 triggers equal
+    const closes = [20, 19, 18, 17, 20, 15, 14, 13, 12, 11];
+    const { buyCount } = computeTD9(makeData(closes));
+    // Bar 4: 20 == close[0]=20 → reset
+    expect(buyCount[4]).toBeNull();
+    // Bar 5: 15 < close[1]=19 → buyCount = 1
+    expect(buyCount[5]).toBe(1);
   });
 });

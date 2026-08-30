@@ -78,12 +78,16 @@ export interface IndicatorParams {
   ma: MaParams;
   macd: MacdParams;
   rsiPeriod: number;
+  expma: { short: number; long: number };
+  xsChannel: { longPeriod: number; shortPeriod: number; k: number };
 }
 
 export const DEFAULT_INDICATOR_PARAMS: IndicatorParams = {
   ma: { ma5: 5, ma10: 10, ma20: 20, ma50: 50 },
   macd: { fast: 12, slow: 26, signal: 9 },
   rsiPeriod: 14,
+  expma: { short: 12, long: 50 },
+  xsChannel: { longPeriod: 100, shortPeriod: 10, k: 11 },
 };
 
 export const INDICATOR_PARAM_MIN = 1;
@@ -96,6 +100,8 @@ function defaultParams(): IndicatorParams {
     ma: { ...DEFAULT_INDICATOR_PARAMS.ma },
     macd: { ...DEFAULT_INDICATOR_PARAMS.macd },
     rsiPeriod: DEFAULT_INDICATOR_PARAMS.rsiPeriod,
+    expma: { ...DEFAULT_INDICATOR_PARAMS.expma },
+    xsChannel: { ...DEFAULT_INDICATOR_PARAMS.xsChannel },
   };
 }
 
@@ -126,6 +132,15 @@ export function loadIndicatorParams(): IndicatorParams {
         if (params.macd.slow <= params.macd.fast) params.macd = { ...DEFAULT_INDICATOR_PARAMS.macd };
       }
       params.rsiPeriod = sanitizePeriod(parsed.rsiPeriod, params.rsiPeriod);
+      if (parsed.expma && typeof parsed.expma === "object") {
+        params.expma.short = sanitizePeriod(parsed.expma.short, params.expma.short);
+        params.expma.long = sanitizePeriod(parsed.expma.long, params.expma.long);
+      }
+      if (parsed.xsChannel && typeof parsed.xsChannel === "object") {
+        params.xsChannel.longPeriod = sanitizePeriod(parsed.xsChannel.longPeriod, params.xsChannel.longPeriod);
+        params.xsChannel.shortPeriod = sanitizePeriod(parsed.xsChannel.shortPeriod, params.xsChannel.shortPeriod);
+        params.xsChannel.k = sanitizePeriod(parsed.xsChannel.k, params.xsChannel.k);
+      }
     }
   } catch {
     // corrupted JSON falls back to defaults
@@ -239,7 +254,7 @@ export function computeRsiSeries(closes: number[], period: number): number[] {
 // ── Sub-panel indicators ────────────────────────────────────────────────────
 
 /** Indicators selectable in each sub-panel slot. */
-export type SubIndicatorKey = "MACD" | "RSI" | "Bollinger" | "KDJ" | "WR" | "CCI";
+export type SubIndicatorKey = "MACD" | "RSI" | "Bollinger" | "KDJ" | "WR" | "CCI" | "EXPMA" | "XSChannel" | "TD9";
 
 export const SUB_INDICATORS: { key: SubIndicatorKey; label: string }[] = [
   { key: "MACD", label: "MACD" },
@@ -248,6 +263,9 @@ export const SUB_INDICATORS: { key: SubIndicatorKey; label: string }[] = [
   { key: "KDJ", label: "KDJ" },
   { key: "WR", label: "WR" },
   { key: "CCI", label: "CCI" },
+  { key: "EXPMA", label: "EXPMA" },
+  { key: "XSChannel", label: "薛斯通道" },
+  { key: "TD9", label: "神奇九转" },
 ];
 
 /**
@@ -292,6 +310,103 @@ export function computeCCI(data: KlineData, period = 20): (number | null)[] {
     out[i] = (tp[i] - sma) / (0.015 * meanDev);
   }
   return out;
+}
+
+/**
+ * EXPMA — two exponential moving averages on close prices.
+ * Returns short and long EMA series (all defined from bar 0, adjust=True).
+ */
+export function computeExpma(
+  closes: number[],
+  shortPeriod: number,
+  longPeriod: number,
+): { short: number[]; long: number[] } {
+  return {
+    short: emaAdjust(closes, shortPeriod),
+    long: emaAdjust(closes, longPeriod),
+  };
+}
+
+/**
+ * XS Channel (薛斯通道) — two nested EMA-based channels.
+ * Upper = EMA(high, L) + K * (EMA(high, L) - EMA(low, S))
+ * Lower = EMA(low, L) - K * (EMA(high, S) - EMA(low, S))
+ * L = longPeriod, S = shortPeriod.
+ */
+export function computeXSChannel(
+  data: KlineData,
+  longPeriod: number,
+  shortPeriod: number,
+  k: number,
+): { upper: (number | null)[]; lower: (number | null)[] } {
+  const ohlc = data.ohlc ?? [];
+  const n = ohlc.length;
+  if (n === 0) return { upper: [], lower: [] };
+
+  const highs = ohlc.map((r) => r[3]); // high = index 3
+  const lows = ohlc.map((r) => r[2]);  // low = index 2
+
+  const emaHighL = emaAdjust(highs, longPeriod);
+  const emaLowL = emaAdjust(lows, longPeriod);
+  const emaHighS = emaAdjust(highs, shortPeriod);
+  const emaLowS = emaAdjust(lows, shortPeriod);
+
+  const upper: (number | null)[] = new Array(n);
+  const lower: (number | null)[] = new Array(n);
+
+  for (let i = 0; i < n; i++) {
+    upper[i] = emaHighL[i] + k * (emaHighL[i] - emaLowS[i]);
+    lower[i] = emaLowL[i] - k * (emaHighS[i] - emaLowL[i]);
+  }
+
+  return { upper, lower };
+}
+
+/**
+ * TD Sequential (神奇九转) — DeMark sequential buy/sell countdown.
+ * Buy setup: close[i] < close[i-4] → buyCount++; else reset.
+ * Sell setup: close[i] > close[i-4] → sellCount++; else reset.
+ * A count reaching 9 is a signal.
+ */
+export function computeTD9(data: KlineData): {
+  buyCount: (number | null)[];
+  sellCount: (number | null)[];
+  buySignals: number[];
+  sellSignals: number[];
+} {
+  const ohlc = data.ohlc ?? [];
+  const n = ohlc.length;
+  const buyCount: (number | null)[] = new Array(n).fill(null);
+  const sellCount: (number | null)[] = new Array(n).fill(null);
+  const buySignals: number[] = [];
+  const sellSignals: number[] = [];
+
+  let bCount = 0;
+  let sCount = 0;
+
+  for (let i = 4; i < n; i++) {
+    const close = ohlc[i][1]; // close = index 1
+    const close4 = ohlc[i - 4][1];
+
+    if (close < close4) {
+      bCount++;
+      sCount = 0;
+    } else if (close > close4) {
+      sCount++;
+      bCount = 0;
+    } else {
+      bCount = 0;
+      sCount = 0;
+    }
+
+    buyCount[i] = bCount > 0 ? bCount : null;
+    sellCount[i] = sCount > 0 ? sCount : null;
+
+    if (bCount === 9) buySignals.push(i);
+    if (sCount === 9) sellSignals.push(i);
+  }
+
+  return { buyCount, sellCount, buySignals, sellSignals };
 }
 
 // ── Intraday timeline helpers ──────────────────────────────────────────────

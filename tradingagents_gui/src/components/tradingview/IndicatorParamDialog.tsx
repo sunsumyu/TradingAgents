@@ -16,7 +16,7 @@ import {
   type IndicatorParams,
 } from "../../lib/chart-utils";
 
-export type ParamTarget = "MA" | "MACD" | "RSI";
+export type ParamTarget = "MA" | "MACD" | "RSI" | "EXPMA" | "XSChannel";
 
 interface FieldDef {
   key: string;
@@ -35,6 +35,8 @@ const TITLES: Record<ParamTarget, string> = {
   MA: "移动平均线 MA 设置",
   MACD: "MACD 设置",
   RSI: "RSI 设置",
+  EXPMA: "EXPMA 设置",
+  XSChannel: "薛斯通道设置",
 };
 
 function fieldsFor(target: ParamTarget, params: IndicatorParams): FieldDef[] {
@@ -51,6 +53,19 @@ function fieldsFor(target: ParamTarget, params: IndicatorParams): FieldDef[] {
       { key: "fast", label: "快线 EMA 周期", value: params.macd.fast },
       { key: "slow", label: "慢线 EMA 周期", value: params.macd.slow },
       { key: "signal", label: "信号线 EMA 周期", value: params.macd.signal },
+    ];
+  }
+  if (target === "EXPMA") {
+    return [
+      { key: "short", label: "短期 EXPMA", value: params.expma.short },
+      { key: "long", label: "长期 EXPMA", value: params.expma.long },
+    ];
+  }
+  if (target === "XSChannel") {
+    return [
+      { key: "longPeriod", label: "长周期 L", value: params.xsChannel.longPeriod },
+      { key: "shortPeriod", label: "短周期 S", value: params.xsChannel.shortPeriod },
+      { key: "k", label: "系数 K", value: params.xsChannel.k },
     ];
   }
   return [{ key: "rsiPeriod", label: "RSI 周期", value: params.rsiPeriod }];
@@ -99,11 +114,15 @@ export default function IndicatorParamDialog({ target, params, onApply, onClose 
       ma: { ...params.ma },
       macd: { ...params.macd },
       rsiPeriod: params.rsiPeriod,
+      expma: { ...params.expma },
+      xsChannel: { ...params.xsChannel },
     };
     for (const f of validated) {
       if (!f.valid) continue;
       if (target === "MA") (next.ma as unknown as Record<string, number>)[f.key] = f.value;
       else if (target === "MACD") (next.macd as unknown as Record<string, number>)[f.key] = f.value;
+      else if (target === "EXPMA") (next.expma as unknown as Record<string, number>)[f.key] = f.value;
+      else if (target === "XSChannel") (next.xsChannel as unknown as Record<string, number>)[f.key] = f.value;
       else if (f.key === "rsiPeriod") next.rsiPeriod = f.value;
     }
     return next;
@@ -114,6 +133,8 @@ export default function IndicatorParamDialog({ target, params, onApply, onClose 
       ma: { ...DEFAULT_INDICATOR_PARAMS.ma },
       macd: { ...DEFAULT_INDICATOR_PARAMS.macd },
       rsiPeriod: DEFAULT_INDICATOR_PARAMS.rsiPeriod,
+      expma: { ...DEFAULT_INDICATOR_PARAMS.expma },
+      xsChannel: { ...DEFAULT_INDICATOR_PARAMS.xsChannel },
     });
     onClose();
   };
