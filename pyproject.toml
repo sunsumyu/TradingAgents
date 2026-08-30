@@ -60,6 +60,10 @@ backtest = [
     "akquant>=0.1.0",
     "akshare>=1.16.0",
 ]
+# Server-side chart PNG export (matplotlib). Install with: pip install "tradingagents[export]"
+export = [
+    "matplotlib>=3.8",
+]
 
 [project.scripts]
 tradingagents = "cli.main:app"

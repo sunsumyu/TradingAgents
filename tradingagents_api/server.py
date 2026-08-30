@@ -21,6 +21,7 @@ from .routers import (
     astock,
     backtest,
     cache,
+    chart_export,
     config,
     health,
     market,
@@ -28,6 +29,7 @@ from .routers import (
     providers,
     realtime,
     screener,
+    watchlist,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,10 +61,12 @@ for _router in (
     health,
     providers,
     alerts,
+    watchlist,
     analysis,
     market,
     astock,
     backtest,
+    chart_export,
     screener,
     portfolio,
     realtime,
