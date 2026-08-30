@@ -269,6 +269,98 @@ def _parse_financial_csv(
     return {"periods": periods, "columns": data_cols, "items": items}
 
 
+def _parse_industry_comparison(
+    md: str, ticker: str, date: str, params: dict[str, Any]
+) -> dict[str, Any]:
+    """Parse industry comparison markdown into structured rankings.
+
+    Expected format (from eastmoney.py)::
+
+        # 行业横向对比 | 600519 | 2026-08-26
+        ## 全行业表现 (东财 30 个行业)
+        排名 | 行业 | 涨跌幅 | 上涨 | 下跌 | 领涨股
+          1. 白酒 | +1.23% | 12 | 3 | 贵州茅台
+          2. 食品饮料 | +0.85% | 18 | 5 | 伊利股份
+
+    Returns::
+
+        {"rankings": [{rank, name, change_pct, up_count, down_count, leader}, ...]}
+    """
+    import re
+
+    if not md or not md.strip():
+        return {"rankings": []}
+
+    rankings: list[dict[str, Any]] = []
+    for line in md.splitlines():
+        line = line.strip()
+        # Match lines like "  1. 白酒 | +1.23% | 12 | 3 | 贵州茅台"
+        m = re.match(
+            r"^\s*(\d+)\.\s*(.+?)\s*\|\s*([+-]?[\d.]+)%\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(.+)$",
+            line,
+        )
+        if not m:
+            continue
+        try:
+            change_pct = float(m.group(3))
+        except (ValueError, TypeError):
+            change_pct = None
+        try:
+            up_count = int(m.group(4))
+        except (ValueError, TypeError):
+            up_count = None
+        try:
+            down_count = int(m.group(5))
+        except (ValueError, TypeError):
+            down_count = None
+        rankings.append({
+            "rank": int(m.group(1)),
+            "name": m.group(2).strip(),
+            "change_pct": change_pct,
+            "up_count": up_count,
+            "down_count": down_count,
+            "leader": m.group(6).strip(),
+        })
+
+    return {"rankings": rankings}
+
+
+def _parse_insider_transactions(
+    md: str, ticker: str, date: str, params: dict[str, Any]
+) -> dict[str, Any]:
+    """Parse insider transactions (mootdx F10 shareholder research) markdown.
+
+    Mootdx returns free-form text. We extract sections delimited by
+    ``【N.标题】`` patterns and preserve the raw text as fallback.
+
+    Returns::
+
+        {"sections": [{title, content}, ...], "raw_text": str}
+    """
+    import re
+
+    if not md or not md.strip():
+        return {"sections": [], "raw_text": ""}
+
+    raw_text = md
+    sections: list[dict[str, str]] = []
+
+    # Split on 【N.标题】 or 【标题】 patterns
+    parts = re.split(r"(?=【[^】]+】)", md)
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        title_match = re.match(r"【([^】]+)】\s*", part)
+        if title_match:
+            title = title_match.group(1).strip()
+            content = part[title_match.end():].strip()
+            if content:
+                sections.append({"title": title, "content": content})
+
+    return {"sections": sections, "raw_text": raw_text}
+
+
 def _parse_chip_distribution(
     md: str, ticker: str, date: str, params: dict[str, Any]
 ) -> dict[str, Any]:
@@ -791,9 +883,9 @@ def _build_feature_table() -> dict[str, dict[str, Any]]:
         "concept_blocks": {"call": _call_concept, "parse": _parse_concept_blocks},
         "profit_forecast": {"call": _call_profit, "parse": _parse_profit_forecast},
         "lockup_expiry": {"call": _call_lockup, "parse": _parse_lockup_expiry},
-        "industry_comparison": {"call": _call_industry, "parse": _passthrough_parser},
+        "industry_comparison": {"call": _call_industry, "parse": _parse_industry_comparison},
         "hot_stocks": {"call": _call_hot, "parse": _parse_hot_stocks},
-        "insider_transactions": {"call": _call_insider, "parse": _passthrough_parser},
+        "insider_transactions": {"call": _call_insider, "parse": _parse_insider_transactions},
         "balance_sheet": {
             "call": _make_financial(get_balance_sheet),
             "parse": _parse_financial_csv,

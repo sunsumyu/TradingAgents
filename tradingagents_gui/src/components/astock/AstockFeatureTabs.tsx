@@ -22,6 +22,8 @@ import type {
   DragonTigerData,
   FinancialStatementData,
   HotStocksData,
+  IndustryComparisonData,
+  InsiderTransactionsData,
   LockupExpiryData,
   NorthboundData,
   ProfitForecastData,
@@ -35,6 +37,8 @@ import ProfitForecastPanel from "./ProfitForecastPanel";
 import LockupPanel from "./LockupPanel";
 import HotStockPanel from "./HotStockPanel";
 import FinancialStatementPanel from "./FinancialStatementPanel";
+import IndustryComparisonPanel from "./IndustryComparisonPanel";
+import InsiderTransactionsPanel from "./InsiderTransactionsPanel";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -186,6 +190,12 @@ function FeatureRenderer({ feature, data }: { feature: AstockFeatureKey; data: A
   }
   if (feature === "balance_sheet" || feature === "income_statement" || feature === "cashflow") {
     return <FinancialStatementPanel feature={feature} data={data.data as unknown as FinancialStatementData} rawMd={data.raw_md} />;
+  }
+  if (feature === "industry_comparison") {
+    return <IndustryComparisonPanel data={data.data as unknown as IndustryComparisonData} rawMd={data.raw_md} />;
+  }
+  if (feature === "insider_transactions") {
+    return <InsiderTransactionsPanel data={data.data as unknown as InsiderTransactionsData} rawMd={data.raw_md} />;
   }
   // All other features: raw_md fallback
   return (

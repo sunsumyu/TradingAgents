@@ -547,6 +547,31 @@ export interface FinancialStatementData {
   items: Record<string, (number | null)[]>; // column → per-period values
 }
 
+/** One row in the industry comparison ranking table. */
+export interface IndustryRanking {
+  rank: number;
+  name: string;
+  change_pct: number | null;
+  up_count: number | null;
+  down_count: number | null;
+  leader: string;
+}
+
+export interface IndustryComparisonData {
+  rankings: IndustryRanking[];
+}
+
+/** A parsed section from mootdx F10 shareholder research text. */
+export interface InsiderSection {
+  title: string;
+  content: string;
+}
+
+export interface InsiderTransactionsData {
+  sections: InsiderSection[];
+  raw_text: string;
+}
+
 /** All known feature keys — used for tabs, dispatch, and availability checks. */
 export type AstockFeatureKey =
   | "chip_distribution"

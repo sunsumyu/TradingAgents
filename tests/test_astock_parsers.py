@@ -17,6 +17,8 @@ from tradingagents_api.astock_features import (
     _parse_lockup_expiry,
     _parse_hot_stocks,
     _parse_financial_csv,
+    _parse_industry_comparison,
+    _parse_insider_transactions,
 )
 
 TICKER = "600519"
@@ -354,3 +356,102 @@ class TestParseFinancialCSV:
         result = _parse_financial_csv(BALANCE_SHEET_MD, TICKER, DATE, {})
         # Should not include comment lines in periods
         assert all(p.startswith("20") for p in result["periods"])
+
+
+# ── Industry comparison fixtures ──────────────────────────────────────────
+
+INDUSTRY_MD = """\
+# 行业横向对比 | 600519 | 2026-08-26
+## 全行业表现 (东财 5 个行业)
+排名 | 行业 | 涨跌幅 | 上涨 | 下跌 | 领涨股
+  1. 白酒 | +2.35% | 12 | 3 | 贵州茅台
+  2. 食品饮料 | +1.20% | 18 | 5 | 伊利股份
+  3. 银行 | +0.50% | 20 | 8 | 招商银行
+  4. 房地产 | -0.80% | 5 | 25 | 万科A
+  5. 煤炭 | -1.50% | 2 | 30 | 中国神华
+"""
+
+
+# ── Insider transactions fixtures ─────────────────────────────────────────
+
+INSIDER_MD = """\
+# Shareholder Research for 600519 (A-stock)
+# Note: A-stock equivalent of insider transactions
+# Data source: mootdx F10
+# Data retrieved on: 2026-08-26 14:30:00
+
+【1.股东结构】
+截止日期: 2026-06-30
+股东人数: 75000
+人均持股: 2150股
+
+【2.十大流通股东】
+贵州茅台集团 | 61.99% | 国有
+香港中央结算 | 7.23% | 外资
+
+【4.股东变化】
+2026-06-30 增持 机构专用 50万股
+2026-03-31 减持 香港中央结算 20万股
+"""
+
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+
+class TestParseIndustryComparison:
+    def test_parses_rankings(self):
+        result = _parse_industry_comparison(INDUSTRY_MD, TICKER, DATE, {})
+        rankings = result["rankings"]
+        assert len(rankings) == 5
+
+    def test_first_ranking(self):
+        result = _parse_industry_comparison(INDUSTRY_MD, TICKER, DATE, {})
+        first = result["rankings"][0]
+        assert first["rank"] == 1
+        assert first["name"] == "白酒"
+        assert first["change_pct"] == pytest.approx(2.35)
+        assert first["up_count"] == 12
+        assert first["down_count"] == 3
+        assert first["leader"] == "贵州茅台"
+
+    def test_negative_change(self):
+        result = _parse_industry_comparison(INDUSTRY_MD, TICKER, DATE, {})
+        coal = next(r for r in result["rankings"] if r["name"] == "煤炭")
+        assert coal["change_pct"] == pytest.approx(-1.50)
+
+    def test_empty(self):
+        result = _parse_industry_comparison("", TICKER, DATE, {})
+        assert result["rankings"] == []
+
+    def test_no_match_lines(self):
+        result = _parse_industry_comparison("# header\nsome random text\n", TICKER, DATE, {})
+        assert result["rankings"] == []
+
+
+class TestParseInsiderTransactions:
+    def test_parses_sections(self):
+        result = _parse_insider_transactions(INSIDER_MD, TICKER, DATE, {})
+        sections = result["sections"]
+        assert len(sections) == 3
+        titles = [s["title"] for s in sections]
+        assert "1.股东结构" in titles
+        assert "2.十大流通股东" in titles
+        assert "4.股东变化" in titles
+
+    def test_section_content_not_empty(self):
+        result = _parse_insider_transactions(INSIDER_MD, TICKER, DATE, {})
+        for s in result["sections"]:
+            assert len(s["content"]) > 0
+
+    def test_raw_text_preserved(self):
+        result = _parse_insider_transactions(INSIDER_MD, TICKER, DATE, {})
+        assert "Shareholder Research" in result["raw_text"]
+
+    def test_empty(self):
+        result = _parse_insider_transactions("", TICKER, DATE, {})
+        assert result["sections"] == []
+        assert result["raw_text"] == ""
+
+    def test_no_sections_text(self):
+        result = _parse_insider_transactions("just plain text\nno sections\n", TICKER, DATE, {})
+        assert result["sections"] == []
+        assert "plain text" in result["raw_text"]
