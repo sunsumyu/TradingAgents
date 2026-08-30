@@ -100,6 +100,21 @@ export interface BacktestRequest {
   initial_cash?: number;
 }
 
+// ── Chart export types (mirrors tradingagents_api/routers/chart_export.py) ──
+
+/** POST /api/chart-export request. */
+export interface ChartExportRequest {
+  ticker: string;
+  date: string;
+  days?: number;
+  interval?: string | null;
+  overlays?: string[];
+  ma_params?: Record<string, number>;
+  width?: number;
+  height?: number;
+  dpi?: number;
+}
+
 // ── Chart visualization types (mirrors tradingagents_api/schemas.py) ──────────
 
 export interface KlineData {

@@ -5,6 +5,7 @@ import type {
   AstockFeatureEnvelope,
   BacktestRequest,
   BacktestResponse,
+  ChartExportRequest,
   ModelInfo,
   NavPoint,
   PortfolioResponse,
@@ -405,5 +406,27 @@ export const api = {
       throw new Error(detail);
     }
     return resp.json();
+  },
+
+  /** POST /api/chart-export - server-side high-DPI chart PNG export (ticket #7).
+   *  Returns a Blob (image/png).  503 carries the matplotlib install guidance. */
+  async exportChart(req: ChartExportRequest, signal?: AbortSignal): Promise<Blob> {
+    const resp = await fetch(`${BASE_URL}/api/chart-export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+      signal,
+    });
+    if (!resp.ok) {
+      let detail = `图表导出失败: HTTP ${resp.status}`;
+      try {
+        const body = await resp.json();
+        detail = body.detail ?? detail;
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(detail);
+    }
+    return resp.blob();
   },
 };

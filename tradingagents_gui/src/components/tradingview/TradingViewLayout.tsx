@@ -10,7 +10,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { Loader2, Camera, Maximize2, Minimize2 } from "lucide-react";
+import { Loader2, Camera, Image, Maximize2, Minimize2 } from "lucide-react";
 import { api } from "../../lib/api";
 import type { MacdData, RsiData, BollingerData } from "../../lib/types";
 import { useChartStore } from "../../lib/useChartStore";
@@ -105,7 +105,7 @@ export default function TradingViewLayout({
   // Chart area container — used for screenshot export
   const chartAreaRef = useRef<HTMLDivElement>(null);
 
-  // ── Screenshot export ────────────────────────────────────────────────────
+  // ── Screenshot export (client-side) ──────────────────────────────────────
   const handleScreenshot = useCallback(() => {
     const area = chartAreaRef.current;
     if (!area) return;
@@ -144,6 +144,47 @@ export default function TradingViewLayout({
     link.click();
     document.body.removeChild(link);
   }, [ticker]);
+
+  // ── Server-side high-DPI export (ticket #7) ─────────────────────────────
+  const [exporting, setExporting] = useState(false);
+  const handleServerExport = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const days = TIMEFRAME_DAYS[timeframe];
+      const interval = isMinuteTimeframe(timeframe) ? timeframe : null;
+      const blob = await api.exportChart({
+        ticker,
+        date: new Date().toISOString().slice(0, 10),
+        days,
+        interval,
+        overlays: activeOverlays,
+        width: 1920,
+        height: 1080,
+        dpi: 150,
+      });
+      // Save via Tauri dialog
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const { writeFile } = await import("@tauri-apps/plugin-fs");
+      const filePath = await save({
+        defaultPath: `${ticker}_chart_${new Date().toISOString().slice(0, 10)}.png`,
+        filters: [{ name: "PNG Image", extensions: ["png"] }],
+      });
+      if (filePath) {
+        const arrayBuffer = await blob.arrayBuffer();
+        await writeFile(filePath, new Uint8Array(arrayBuffer));
+      }
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      if (msg.includes("503") || msg.includes("matplotlib") || msg.includes("pip install")) {
+        alert("图表导出需要 matplotlib。\n请执行：pip install \"tradingagents[export]\"");
+      } else {
+        console.error("Chart export failed:", err);
+      }
+    } finally {
+      setExporting(false);
+    }
+  }, [ticker, timeframe, activeOverlays, exporting]);
 
   // Sync initial props into Zustand store on mount
   useEffect(() => {
@@ -467,9 +508,19 @@ export default function TradingViewLayout({
             <button
               onClick={handleScreenshot}
               className="p-1.5 rounded hover:bg-[#2A2E39] transition-colors shrink-0"
-              title="截图导出"
+              title="快速截图（本地渲染）"
             >
               <Camera size={14} className="text-[#787B86]" />
+            </button>
+            <button
+              onClick={handleServerExport}
+              disabled={exporting}
+              className="p-1.5 rounded hover:bg-[#2A2E39] transition-colors shrink-0"
+              title="高清导出（服务端渲染 + 水印）"
+            >
+              {exporting
+                ? <Loader2 size={14} className="text-[#787B86] animate-spin" />
+                : <Image size={14} className="text-[#787B86]" />}
             </button>
             <button
               onClick={() => setIsFullscreen(true)}
