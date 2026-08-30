@@ -81,6 +81,7 @@ markers = [
     "unit: fast isolated unit tests",
     "integration: tests requiring external services",
     "smoke: quick sanity-check tests",
+    "benchmark: performance benchmarks (skip with -m 'not benchmark')",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
