@@ -8,6 +8,7 @@
 import { useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import type { IndustryComparisonData } from "../../lib/types";
+import MarkdownRenderer from "../shared/Markdown";
 
 interface Props {
   data: IndustryComparisonData;
@@ -15,7 +16,7 @@ interface Props {
 }
 
 export default function IndustryComparisonPanel({ data, rawMd }: Props) {
-  const { rankings } = data;
+  const { rankings = [] } = data ?? ({} as IndustryComparisonData);
 
   // ── Readout stats ─────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -95,9 +96,7 @@ export default function IndustryComparisonPanel({ data, rawMd }: Props) {
     return (
       <div className="h-full overflow-y-auto">
         {rawMd ? (
-          <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-            {rawMd}
-          </pre>
+          <MarkdownRenderer markdown={rawMd} className="p-3" />
         ) : (
           <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
             暂无行业数据

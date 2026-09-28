@@ -9,10 +9,11 @@
     height: 100%;
     margin: 0;
     overflow: hidden;
-    background-color: #131722;
-    color: #d1d4dc;
+    background-color: #0f1117;
+    color: #f1f5f9;
     font-size: 13px;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     user-select: none;
   }
   input,
@@ -24,40 +25,40 @@
 @layer components {
   /* Thin scrollbars */
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #363a45;
-    border-radius: 4px;
+    background: #334155;
+    border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #4a4f5c;
+    background: #475569;
   }
 
-  /* Card section — subtle elevation + hover lift */
+  /* Card section — elevated surface with subtle border */
   .card {
-    @apply bg-bg-secondary border border-line rounded-lg shadow-card
-      transition-all duration-200 ease-out-expo;
+    @apply bg-bg-secondary border border-line rounded-xl shadow-card
+      transition-all duration-300 ease-out-expo;
   }
   .card:hover {
-    @apply border-line/80 bg-bg-secondary/95;
+    @apply border-line/80 bg-bg-secondary/95 shadow-card-hover;
   }
 
-  /* Glowing card — AceternityUI-style hover border glow (opt-in) */
+  /* Glowing card — modern hover glow effect */
   .card-glow {
-    @apply relative transition-shadow duration-300;
+    @apply relative transition-all duration-300;
   }
   .card-glow::before {
     content: "";
-    @apply pointer-events-none absolute inset-0 rounded-lg opacity-0
+    @apply pointer-events-none absolute inset-0 rounded-xl opacity-0
       transition-opacity duration-300;
     background: radial-gradient(
       600px circle at 50% 0%,
-      rgba(41, 98, 255, 0.08),
+      rgba(59, 130, 246, 0.1),
       transparent 40%
     );
   }
@@ -65,58 +66,58 @@
     @apply opacity-100;
   }
   .card-glow:hover {
-    @apply shadow-glow-accent border-accent/30;
+    @apply shadow-glow-accent border-accent/40;
   }
 
   /* Section title with accent bar */
   .section-title {
-    @apply flex items-center gap-2 text-[13px] font-medium text-text-primary mb-1.5;
+    @apply flex items-center gap-2 text-[13px] font-semibold text-text-primary mb-2;
   }
   .section-title::before {
     content: "";
-    @apply block w-[3px] h-[14px] bg-accent rounded-[1px];
+    @apply block w-[3px] h-[16px] bg-gradient-to-b from-accent to-accent-light rounded-[2px];
   }
 
-  /* Inputs — focus glow ring */
+  /* Inputs — modern focus glow ring */
   .input {
-    @apply bg-bg-surface border border-line rounded-md px-2 py-1.5 text-[12px] text-text-primary
-      outline-none transition-all duration-150 placeholder:text-text-muted;
+    @apply bg-bg-surface border border-line rounded-lg px-3 py-2 text-[12px] text-text-primary
+      outline-none transition-all duration-200 placeholder:text-text-muted;
   }
   .input:focus {
-    @apply border-accent shadow-glow-accent-sm;
+    @apply border-accent shadow-glow-accent-sm ring-1 ring-accent/30;
   }
 
   /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[12px]
-      font-medium transition-all duration-150 ease-out-expo cursor-pointer select-none
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-[12px]
+      font-medium transition-all duration-200 ease-out-expo cursor-pointer select-none
       whitespace-nowrap;
   }
   .btn-primary {
     @apply btn relative overflow-hidden text-white;
-    background: linear-gradient(180deg, #3b6fff 0%, #2962ff 50%, #1e53e5 100%);
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%);
     box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.35),
-      0 0 0 1px rgba(41, 98, 255, 0.5),
+      0 2px 4px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(59, 130, 246, 0.5),
       inset 0 1px 0 rgba(255, 255, 255, 0.15);
   }
   .btn-primary:hover:not(:disabled) {
     box-shadow:
-      0 2px 4px rgba(0, 0, 0, 0.35),
-      0 0 16px rgba(41, 98, 255, 0.45),
+      0 4px 8px rgba(0, 0, 0, 0.3),
+      0 0 20px rgba(59, 130, 246, 0.5),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    filter: brightness(1.08);
+    filter: brightness(1.1);
+    transform: translateY(-1px);
   }
   .btn-primary:active:not(:disabled) {
-    transform: translateY(0.5px);
-    filter: brightness(0.96);
+    transform: translateY(0);
+    filter: brightness(0.95);
   }
   .btn-primary:disabled {
-    @apply bg-text-muted text-neutral-300 cursor-not-allowed hover:bg-text-muted opacity-60;
-    background: #5a5d68;
+    @apply bg-text-muted text-neutral-300 cursor-not-allowed opacity-50;
     box-shadow: none;
   }
-  /* Shine sweep on hover — 21st.dev style */
+  /* Shine sweep on hover */
   .btn-primary::after {
     content: "";
     @apply pointer-events-none absolute inset-0 w-1/3 -translate-x-[150%]
@@ -124,7 +125,7 @@
     background: linear-gradient(
       90deg,
       transparent,
-      rgba(255, 255, 255, 0.25),
+      rgba(255, 255, 255, 0.3),
       transparent
     );
   }
@@ -133,45 +134,49 @@
   }
   .btn-ghost {
     @apply btn bg-transparent text-text-secondary border border-line hover:bg-bg-hover
-      hover:text-text-primary hover:border-text-muted/60;
+      hover:text-text-primary hover:border-text-muted/60 hover:shadow-md;
   }
   .btn-danger {
     @apply btn bg-down text-white hover:opacity-90;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+  }
+  .btn-danger:hover {
+    box-shadow: 0 4px 8px rgba(239, 68, 68, 0.4);
   }
 
   /* Tab bar (TradingView style) */
   .tab {
-    @apply relative py-1 px-4 text-[12px] text-text-secondary cursor-pointer
-      transition-colors duration-100 hover:text-text-primary select-none;
+    @apply relative py-2 px-5 text-[12px] text-text-secondary cursor-pointer
+      transition-colors duration-200 hover:text-text-primary select-none;
   }
   .tab-active {
-    @apply text-text-primary;
+    @apply text-text-primary font-medium;
   }
   .tab-active::after {
     content: "";
-    @apply absolute bottom-0 left-0 right-0 h-[2px] bg-accent;
+    @apply absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-accent to-accent-light;
   }
 
   /* Status dots */
   .dot {
-    @apply inline-block w-1.5 h-1.5 rounded-full mr-1.5;
+    @apply inline-block w-2 h-2 rounded-full mr-1.5;
   }
 
   /* Signal badge */
   .badge {
-    @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium;
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-lg text-[12px] font-semibold;
   }
 
-  /* ── Design-system extras (AceternityUI / 21st.dev inspired) ───────────── */
+  /* ── Design-system extras ──────────────────────────────────────────────────────── */
 
   /* Gradient headline text */
   .gradient-text {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(135deg, #ffffff 0%, #d1d4dc 45%, #6b84c7 100%);
+    background-image: linear-gradient(135deg, #ffffff 0%, #e2e8f0 45%, #60a5fa 100%);
   }
   .gradient-text-accent {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(120deg, #2962ff 0%, #6b8cff 50%, #2962ff 100%);
+    background-image: linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #3b82f6 100%);
     background-size: 200% auto;
     animation: gradient-shift 4s ease infinite;
   }
@@ -182,28 +187,28 @@
   }
   .spotlight-bg::before {
     content: "";
-    @apply pointer-events-none absolute inset-x-0 top-0 h-[420px];
+    @apply pointer-events-none absolute inset-x-0 top-0 h-[500px];
     background: radial-gradient(
       ellipse 70% 55% at 50% -10%,
-      rgba(41, 98, 255, 0.14),
+      rgba(59, 130, 246, 0.18),
       transparent 70%
     );
   }
 
   /* Frosted glass surface */
   .glass {
-    @apply bg-bg-secondary/70 backdrop-blur-md border border-line/60;
+    @apply bg-bg-secondary/80 backdrop-blur-xl border border-line/50;
   }
 
   /* Chip / eyebrow label above the headline */
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-accent/30
-      bg-accent/10 px-3 py-1 text-[11px] font-medium text-[#8ba6ff];
+    @apply inline-flex items-center gap-2 rounded-full border border-accent/30
+      bg-accent/10 px-4 py-1.5 text-[11px] font-medium text-accent-light;
   }
 
   /* Shimmer skeleton line */
   .skeleton {
-    @apply relative overflow-hidden rounded bg-bg-surface;
+    @apply relative overflow-hidden rounded-lg bg-bg-surface;
   }
   .skeleton::after {
     content: "";
@@ -211,75 +216,118 @@
     background: linear-gradient(
       90deg,
       transparent,
-      rgba(255, 255, 255, 0.06),
+      rgba(255, 255, 255, 0.08),
       transparent
     );
   }
 
   /* Markdown report content */
   .prose-report {
-    @apply text-text-primary text-[12.5px] leading-relaxed;
+    @apply text-text-primary text-[13px] leading-relaxed;
   }
   .prose-report h1,
   .prose-report h2,
   .prose-report h3,
   .prose-report h4 {
-    @apply text-text-primary font-semibold mt-5 mb-2 first:mt-0;
+    @apply text-text-primary font-semibold mt-6 mb-3 first:mt-0;
   }
   .prose-report h1 {
-    @apply text-[20px] border-b border-line pb-2;
+    @apply text-[22px] border-b border-line pb-3;
   }
   .prose-report h2 {
-    @apply text-[16px];
+    @apply text-[18px];
   }
   .prose-report h3 {
-    @apply text-[14px];
+    @apply text-[15px];
   }
   .prose-report h4 {
     @apply text-[13px];
   }
   .prose-report p {
-    @apply my-2;
+    @apply my-3;
   }
   .prose-report ul {
-    @apply list-disc pl-5 my-2 space-y-0.5;
+    @apply list-disc pl-6 my-3 space-y-1;
   }
   .prose-report ol {
-    @apply list-decimal pl-5 my-2 space-y-0.5;
+    @apply list-decimal pl-6 my-3 space-y-1;
   }
   .prose-report li {
-    @apply my-0.5;
+    @apply my-1;
   }
   .prose-report blockquote {
-    @apply border-l-[3px] border-accent/60 pl-3 my-2 text-text-secondary italic;
+    @apply border-l-[3px] border-accent/60 pl-4 my-3 text-text-secondary italic;
   }
   .prose-report code {
-    @apply font-mono text-[11px] bg-bg-surface text-accent px-1 py-0.5 rounded;
+    @apply font-mono text-[11px] bg-bg-surface text-accent-light px-1.5 py-0.5 rounded;
   }
   .prose-report pre {
-    @apply bg-bg-surface border border-line rounded p-3 my-3 overflow-x-auto;
+    @apply bg-bg-surface border border-line rounded-lg p-4 my-4 overflow-x-auto;
   }
   .prose-report pre code {
     @apply bg-transparent text-text-primary p-0;
   }
   .prose-report a {
-    @apply text-accent underline hover:text-accent-hover;
+    @apply text-accent-light underline hover:text-accent;
   }
   .prose-report hr {
-    @apply border-line my-4;
+    @apply border-line my-5;
   }
   .prose-report table {
-    @apply w-full border-collapse my-3 text-[12px];
+    @apply w-full border-collapse my-4 text-[12px];
   }
   .prose-report th {
-    @apply bg-bg-surface text-text-primary font-medium text-left px-2 py-1 border border-line;
+    @apply bg-bg-surface text-text-primary font-semibold text-left px-3 py-2 border border-line;
   }
   .prose-report td {
-    @apply px-2 py-1 border border-line text-text-secondary;
+    @apply px-3 py-2 border border-line text-text-secondary;
   }
   .prose-report strong {
     @apply font-semibold text-text-primary;
   }
+
+  /* Compact markdown — used by ASTOCK feature panels (320px tall strip).
+     Same renderer as the report page (react-markdown + remark-gfm), tighter
+     type scale. Ticket 03: single active renderer, two themes. */
+  .prose-compact {
+    @apply text-text-primary text-[12px] leading-relaxed;
+  }
+  .prose-compact h1,
+  .prose-compact h2,
+  .prose-compact h3,
+  .prose-compact h4 {
+    @apply text-text-primary font-semibold mt-3 mb-2 first:mt-0;
+  }
+  .prose-compact h1 { @apply text-[15px]; }
+  .prose-compact h2 { @apply text-[13px]; }
+  .prose-compact h3 { @apply text-[12px]; }
+  .prose-compact h4 { @apply text-[12px]; }
+  .prose-compact p { @apply my-2; }
+  .prose-compact ul { @apply list-disc pl-5 my-2 space-y-0.5; }
+  .prose-compact ol { @apply list-decimal pl-5 my-2 space-y-0.5; }
+  .prose-compact li { @apply my-0.5; }
+  .prose-compact blockquote {
+    @apply border-l-2 border-accent/50 pl-3 my-2 text-text-secondary;
+  }
+  .prose-compact code {
+    @apply font-mono text-[11px] bg-bg-surface text-accent-light px-1 py-0.5 rounded;
+  }
+  .prose-compact pre {
+    @apply bg-bg-surface border border-line rounded p-3 my-2 overflow-x-auto;
+  }
+  .prose-compact pre code { @apply bg-transparent text-text-primary p-0; }
+  .prose-compact a { @apply text-accent-light underline hover:text-accent; }
+  .prose-compact hr { @apply border-line my-3; }
+  .prose-compact table {
+    @apply w-full border-collapse my-2 text-[11px];
+  }
+  .prose-compact th {
+    @apply bg-bg-hover text-text-secondary font-medium text-left px-2 py-1.5 border-b border-line whitespace-nowrap;
+  }
+  .prose-compact td {
+    @apply px-2 py-1 border-b border-line/50 text-text-secondary whitespace-nowrap;
+  }
+  .prose-compact strong { @apply font-semibold text-text-primary; }
 }
 
 @keyframes gradient-shift {

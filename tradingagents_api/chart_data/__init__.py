@@ -303,18 +303,19 @@ def build_chart_data(
     # --- Fund Flow data (A-share only, with cache) ---
     fund_flow = None
     if _is_astock_ticker(ticker):
-        from tradingagents.data_cache import cached_fetch_raw
+        from tradingagents.cache import get_cache
 
-        with cached_fetch_raw(ticker, "fund_flow", ticker=ticker, date=date) as ctx:
-            if ctx.hit:
-                fund_flow = FundFlowData(**ctx.value)
+        mgr = get_cache(ticker)
+        with mgr.fetch("fund_flow", date, source_fn=lambda: None) as (cached, hit):
+            if hit:
+                fund_flow = FundFlowData(**cached) if cached else None
             else:
                 from .fetchers import fetch_fund_flow_data
 
                 ff_data = fetch_fund_flow_data(ticker, date)
                 if ff_data:
                     fund_flow = FundFlowData(**ff_data)
-                    ctx.store(fund_flow.model_dump())
+                    mgr.set("fund_flow", date, fund_flow.model_dump())
 
     # --- Assemble final ChartData ---
     chart_data = ChartData(

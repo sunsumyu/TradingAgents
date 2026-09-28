@@ -14,46 +14,37 @@ from typing import Annotated
 from datetime import datetime
 
 import pandas as pd
-import requests as _requests
 
+from .http_client import default_client
 from .utils import (
-    _UA,
     get_prefix,
     normalize_ticker,
     is_historical,
     market_today,
-    no_proxy_get,
 )
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Eastmoney anti-ban: throttle + Keep-Alive session
+# Eastmoney anti-ban: throttle
 # ---------------------------------------------------------------------------
 
-_DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-_EM_SESSION = _requests.Session()
-_EM_SESSION.headers.update({"User-Agent": _UA})
-# Bypass proxy for eastmoney domains (system proxy may be broken)
-_EM_SESSION.trust_env = False
 _EM_MIN_INTERVAL = float(os.environ.get("EM_MIN_INTERVAL", "1.0"))
 _em_last_call = [0.0]
 
+# Eastmoney datacenter-web API base URL
+_DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
 
-def _em_get(url, params=None, headers=None, timeout=15, **kwargs):
-    """东财统一请求入口：自动节流 + 绕过系统代理 + 默认 UA。"""
+
+def _em_get(url, params=None, headers=None, timeout=15, retries=3, **kwargs):
+    """东财统一请求入口：自动节流 + 默认 UA + 重试。"""
     wait = _EM_MIN_INTERVAL - (time.time() - _em_last_call[0])
     if wait > 0:
         time.sleep(wait + random.uniform(0.1, 0.5))
-    merged_headers = {**_EM_SESSION.headers}
-    if headers:
-        merged_headers.update(headers)
-    try:
-        with _requests.Session() as s:
-            s.trust_env = False
-            return s.get(url, params=params, headers=merged_headers, timeout=timeout, **kwargs)
-    finally:
-        _em_last_call[0] = time.time()
+
+    resp = default_client.get(url, params=params, headers=headers, timeout=timeout)
+    _em_last_call[0] = time.time()
+    return resp
 
 
 def _eastmoney_datacenter(
@@ -61,6 +52,7 @@ def _eastmoney_datacenter(
     columns: str = "ALL",
     filter_str: str = "",
     page_size: int = 50,
+    page_number: int = 1,
     sort_columns: str = "",
     sort_types: str = "-1",
 ) -> list[dict]:
@@ -69,7 +61,7 @@ def _eastmoney_datacenter(
         "reportName": report_name,
         "columns": columns,
         "filter": filter_str,
-        "pageNumber": "1",
+        "pageNumber": str(page_number),
         "pageSize": str(page_size),
         "sortColumns": sort_columns,
         "sortTypes": sort_types,
@@ -81,6 +73,35 @@ def _eastmoney_datacenter(
     if d.get("result") and d["result"].get("data"):
         return d["result"]["data"]
     return []
+
+
+def _eastmoney_datacenter_all_pages(
+    report_name: str,
+    columns: str = "ALL",
+    filter_str: str = "",
+    page_size: int = 500,
+    sort_columns: str = "",
+    sort_types: str = "-1",
+    max_pages: int = 20,
+) -> list[dict]:
+    """东财数据中心分页全量查询。"""
+    all_data: list[dict] = []
+    for page in range(1, max_pages + 1):
+        data = _eastmoney_datacenter(
+            report_name,
+            columns=columns,
+            filter_str=filter_str,
+            page_size=page_size,
+            page_number=page,
+            sort_columns=sort_columns,
+            sort_types=sort_types,
+        )
+        if not data:
+            break
+        all_data.extend(data)
+        if len(data) < page_size:
+            break
+    return all_data
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +136,7 @@ def get_concept_blocks(
             f'?stock=[{{"code":"{code}","market":"ab","type":"stock"}}]'
             "&finClientType=pc"
         )
-        r = no_proxy_get(url, headers=_BAIDU_PAE_HEADERS, timeout=10)
+        r = default_client.get(url, headers=_BAIDU_PAE_HEADERS, timeout=10)
         d = r.json()
 
         if str(d.get("ResultCode", -1)) != "0":
@@ -590,7 +611,7 @@ def get_global_news(
         cls_url = "https://www.cls.cn/nodeapi/telegraphList"
         cls_params = {"rn": str(limit), "page": "1"}
         cls_headers = {"User-Agent": _UA, "Referer": "https://www.cls.cn/"}
-        r_cls = no_proxy_get(cls_url, params=cls_params, headers=cls_headers, timeout=10)
+        r_cls = default_client.get(cls_url, params=cls_params, headers=cls_headers, timeout=10)
         d_cls = r_cls.json()
         for item in d_cls.get("data", {}).get("roll_data", []):
             title = item.get("title", "") or item.get("brief", "")
@@ -664,3 +685,156 @@ def get_global_news(
         f"## China & Global Market News, from {start_date} to {curr_date}:\n\n"
         + news_str
     )
+
+
+def get_seat_activity_analysis(
+    curr_date: Annotated[str, "Current date yyyy-mm-dd"] = "",
+    period: Annotated[str, "Period: 1个月/3个月/6个月/一年"] = "1个月",
+) -> str:
+    """席位活跃度分析 — 龙虎榜营业部排行。
+
+    使用买方/卖方明细报表聚合（RPT_BILLBOARD_DAILYDETAILSBUY/SELL）。
+    """
+    from datetime import timedelta as _td
+
+    lines = ["# 席位活跃度分析"]
+    lines.append(f"\n周期: {period}")
+
+    if curr_date:
+        end_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    else:
+        end_dt = datetime.now()
+
+    period_days = {"1个月": 30, "3个月": 90, "6个月": 180, "一年": 365}
+    days = period_days.get(period, 30)
+    start_dt = end_dt - _td(days=days)
+
+    seat_map: dict[str, dict] = {}
+
+    # 批量查询（单页 Top 500，覆盖最活跃席位）
+    for report, side in [
+        ("RPT_BILLBOARD_DAILYDETAILSBUY", "buy"),
+        ("RPT_BILLBOARD_DAILYDETAILSSELL", "sell"),
+    ]:
+        try:
+            all_data = _eastmoney_datacenter(
+                report,
+                filter_str=f"(TRADE_DATE>='{start_dt.strftime('%Y-%m-%d')}')(TRADE_DATE<='{end_dt.strftime('%Y-%m-%d')}')",
+                page_size=500,
+                sort_columns="BUY" if side == "buy" else "SELL",
+                sort_types="-1",
+            )
+            for row in all_data:
+                name = str(row.get("OPERATEDEPT_NAME", "")).strip()
+                if not name:
+                    continue
+                amt = float(row.get("BUY") if side == "buy" else row.get("SELL") or 0)
+                if name not in seat_map:
+                    seat_map[name] = {"buy": 0, "sell": 0, "appear": set()}
+                seat_map[name][side] += amt
+                trade_date = str(row.get("TRADE_DATE", ""))[:10]
+                if trade_date:
+                    seat_map[name]["appear"].add(trade_date)
+        except Exception:
+            pass
+
+    if not seat_map:
+        lines.append(f"\n{period}内无龙虎榜席位数据。")
+        return "\n".join(lines)
+
+    sorted_seats = sorted(
+        seat_map.items(),
+        key=lambda x: x[1]["buy"] + x[1]["sell"],
+        reverse=True,
+    )
+
+    lines.append(f"\n共 {len(sorted_seats)} 个营业部")
+    lines.append(
+        "序号 | 营业部名称 | 龙虎榜成交额(万) | 上榜次数 | "
+        "买入额(万) | 卖出额(万) | 净买入额(万)"
+    )
+
+    for idx, (name, stats) in enumerate(sorted_seats[:30], 1):
+        buy_wan = round(stats["buy"] / 10000, 2)
+        sell_wan = round(stats["sell"] / 10000, 2)
+        turnover_wan = round(buy_wan + sell_wan, 2)
+        net_buy_wan = round(buy_wan - sell_wan, 2)
+        appear_count = len(stats["appear"])
+        lines.append(
+            f"  {idx} | {name} | {turnover_wan} | {appear_count} | "
+            f"{buy_wan} | {sell_wan} | {net_buy_wan}"
+        )
+
+    return "\n".join(lines)
+
+
+def get_stock_activity_analysis(
+    curr_date: Annotated[str, "Current date yyyy-mm-dd"] = "",
+    period: Annotated[str, "Period: 1个月/3个月/6个月/一年"] = "1个月",
+) -> str:
+    """股票活跃度分析 — 个股龙虎榜上榜频次排行。"""
+    from datetime import timedelta as _td
+
+    lines = ["# 股票活跃度分析"]
+    lines.append(f"\n周期: {period}")
+
+    if curr_date:
+        end_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    else:
+        end_dt = datetime.now()
+
+    period_days = {"1个月": 30, "3个月": 90, "6个月": 180, "一年": 365}
+    days = period_days.get(period, 30)
+    start_dt = end_dt - _td(days=days)
+    start_str = start_dt.strftime("%Y-%m-%d")
+    end_str = end_dt.strftime("%Y-%m-%d")
+
+    lines.append(f"日期范围: {start_str} ~ {end_str}")
+
+    try:
+        data = _eastmoney_datacenter(
+            "RPT_DAILYBILLBOARD_DETAILSNEW",
+            filter_str=f"(TRADE_DATE>='{start_str}')(TRADE_DATE<='{end_str}')",
+            page_size=500,
+            sort_columns="BILLBOARD_DEAL_AMT",
+            sort_types="-1",
+        )
+    except Exception as e:
+        return f"股票活跃度查询失败: {e}"
+
+    if not data:
+        lines.append(f"\n{period}内无龙虎榜数据。")
+        return "\n".join(lines)
+
+    stock_map: dict[str, dict] = {}
+    for row in data:
+        code = str(row.get("SECURITY_CODE", ""))
+        name = str(row.get("SECURITY_NAME_ABBR", ""))
+        if code not in stock_map:
+            stock_map[code] = {"name": name, "turnover": 0, "appear": set(), "last_date": ""}
+        stock_map[code]["turnover"] += float(row.get("BILLBOARD_DEAL_AMT") or 0)
+        trade_date = str(row.get("TRADE_DATE", ""))[:10]
+        stock_map[code]["appear"].add(trade_date)
+        if trade_date > stock_map[code]["last_date"]:
+            stock_map[code]["last_date"] = trade_date
+
+    sorted_stocks = sorted(
+        stock_map.items(),
+        key=lambda x: x[1]["turnover"],
+        reverse=True,
+    )
+
+    lines.append(f"\n共 {len(sorted_stocks)} 只股票")
+    lines.append(
+        "序号 | 证券代码 | 证券简称 | 最近上榜日 | 龙虎榜成交额(万) | 上榜次数"
+    )
+
+    for idx, (code, stats) in enumerate(sorted_stocks[:30], 1):
+        turnover_wan = round(stats["turnover"] / 10000, 2)
+        appear_count = len(stats["appear"])
+        lines.append(
+            f"  {idx} | {code} | {stats['name']} | {stats['last_date']} | "
+            f"{turnover_wan} | {appear_count}"
+        )
+
+    return "\n".join(lines)

@@ -15,9 +15,15 @@ from datetime import datetime
 import pandas as pd
 import requests as _requests
 
-from .utils import _UA, get_prefix, normalize_ticker, no_proxy_get
+from .http_client import sina_client
+from .utils import get_prefix, normalize_ticker
 
 logger = logging.getLogger(__name__)
+
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) "
+    "Gecko/20100101 Firefox/110.0"
+)
 
 
 def _sina_stock_code(code: str) -> str:
@@ -41,7 +47,7 @@ def sina_kline_fallback(code: str, start_date: str = None, end_date: str = None)
         "ma": "no",
         "datalen": "800",
     }
-    r = no_proxy_get(url, params=params, timeout=15)
+    r = sina_client.get(url, params=params, timeout=15)
     r.raise_for_status()
     data = _json.loads(r.text)
 
@@ -73,7 +79,15 @@ def sina_kline_fallback(code: str, start_date: str = None, end_date: str = None)
 def _get_financial_report_sina(
     code: str, report_type: str, freq: str, curr_date: str = None,
 ) -> pd.DataFrame:
-    """Shared helper: fetch financial report via Sina direct HTTP API."""
+    """Shared helper: fetch financial report via Sina direct HTTP API.
+
+    Supports both legacy format (``result.data.{source_type}: [...]``) and
+    the new ``report_list`` format where each report date maps to its own
+    ``data`` list.
+
+    Always returns a DataFrame with ``报告日`` as first column and each
+    financial item as a subsequent column (column-oriented format).
+    """
     _report_type_map = {
         "资产负债表": "fzb",
         "利润表": "lrb",
@@ -91,16 +105,78 @@ def _get_financial_report_sina(
         "page": "1",
         "num": "20",
     }
-    r = no_proxy_get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
+    r = sina_client.get(url, params=params, headers={"User-Agent": _UA}, timeout=15)
     d = r.json()
 
     result = d.get("result", {}).get("data", {})
-    items = result.get(source_type, [])
-    if not isinstance(items, list) or not items:
-        return pd.DataFrame()
 
-    df = pd.DataFrame(items)
+    # ── New format: report_list[date].data ──
+    report_list = result.get("report_list", {})
+    if isinstance(report_list, dict) and report_list:
+        # Collect all periods and their items
+        all_periods: dict[str, dict[str, str]] = {}
+        for rpt_date, rpt_info in report_list.items():
+            items = rpt_info.get("data", []) if isinstance(rpt_info, dict) else []
+            if not isinstance(items, list):
+                continue
+            period_data: dict[str, str] = {}
+            for item in items:
+                if isinstance(item, dict):
+                    title = (item.get("item_title") or "").strip()
+                    value = (item.get("item_value") or "").strip()
+                    if title and title not in period_data:
+                        period_data[title] = value
+            if period_data:
+                all_periods[rpt_date] = period_data
 
+        if not all_periods:
+            return pd.DataFrame()
+
+        # Build column-oriented DataFrame: 报告日 + each item_title as column
+        from collections import OrderedDict
+        # Collect all unique item titles across periods
+        all_titles: list[str] = []
+        seen = set()
+        for period_data in all_periods.values():
+            for title in period_data:
+                if title not in seen:
+                    all_titles.append(title)
+                    seen.add(title)
+
+        # Build rows: each row is a period
+        rows = []
+        for rpt_date in sorted(all_periods.keys(), reverse=True):
+            period_data = all_periods[rpt_date]
+            row = {"报告日": f"{rpt_date[:4]}-{rpt_date[4:6]}-{rpt_date[6:8]}"}
+            for title in all_titles:
+                val_str = period_data.get(title, "")
+                # Convert numeric string to float
+                try:
+                    val = float(val_str.replace(",", "")) if val_str else None
+                except (ValueError, AttributeError):
+                    val = None
+                row[title] = val
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+
+    else:
+        # ── Legacy format: result.data.{source_type}: [...] ──
+        items = result.get(source_type, [])
+        if not isinstance(items, list) or not items:
+            return pd.DataFrame()
+        df = pd.DataFrame(items)
+
+        # Normalize date column
+        date_col = None
+        for col in ["报告日", "REPORT_DATE", "report_date"]:
+            if col in df.columns:
+                date_col = col
+                break
+        if date_col and date_col != "报告日":
+            df["报告日"] = df[date_col]
+
+    # Filter by curr_date
     if curr_date and "报告日" in df.columns:
         df["报告日"] = pd.to_datetime(df["报告日"], errors="coerce")
         cutoff = pd.to_datetime(curr_date)
@@ -109,6 +185,9 @@ def _get_financial_report_sina(
     if freq.lower() == "annual" and "报告日" in df.columns:
         months = pd.to_datetime(df["报告日"], errors="coerce").dt.month
         df = df[months == 12]
+
+    if "报告日" in df.columns:
+        df = df.sort_values("报告日", ascending=False)
 
     return df.head(8)
 
@@ -188,7 +267,7 @@ def _fetch_news_sina(code: str, page_size: int = 20) -> list[dict]:
         "Referer": "https://finance.sina.com.cn/",
     }
 
-    resp = no_proxy_get(url, headers=headers, timeout=15)
+    resp = sina_client.get(url, headers=headers, timeout=15)
     resp.raise_for_status()
     resp.encoding = "gb2312"
     html = resp.text

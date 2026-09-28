@@ -38,6 +38,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_ANTHROPIC_EFFORT":        "anthropic_effort",
     # Market / exchange regime selector
     "TRADINGAGENTS_MARKET_TYPE":             "market_type",
+    "TRADINGAGENTS_MARKET_DATA_VENDOR":      "market_data_vendor",
 }
 
 
@@ -91,9 +92,9 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Pending entries are never pruned. None disables rotation entirely.
     "memory_log_max_entries": None,
     # LLM settings
-    "llm_provider": "openai",
-    "deep_think_llm": "gpt-5.5",
-    "quick_think_llm": "gpt-5.4-mini",
+    "llm_provider": "google",
+    "deep_think_llm": "gemini-3.1-pro-preview",
+    "quick_think_llm": "gemini-3.5-flash",
     # Multi-platform LLM config (per-model provider selection)
     # When set, these override the single-provider llm_provider for each model type
     "quick_llm_provider": None,   # Falls back to llm_provider if None
@@ -205,6 +206,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
     },
     # Market / exchange regime: "auto" detects from ticker, or force "us"/"astock"/"hk"/"crypto"
     "market_type": "auto",
+    # Market data vendor: "eastmoney" (preferred, full features) or "tencent" (fallback)
+    "market_data_vendor": "combined",
     # A-share specific settings (only active when market_type == "astock")
     "astock_lookback_days": 60,          # historical window for A-share data fetch
     "astock_trading_sessions": True,     # include both morning & afternoon sessions

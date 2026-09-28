@@ -7,13 +7,16 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from ..portfolio import (
+    Goal,
     PortfolioResponse,
     TradeRecord,
     execute_trade,
+    get_goals,
     get_nav_history,
     get_portfolio,
     get_trade_history,
     reset_portfolio,
+    set_goals,
 )
 from ..schemas import PortfolioTradeRequest
 
@@ -73,5 +76,23 @@ async def post_portfolio_reset(initial_cash: float = 1_000_000.0):
     """Reset portfolio to initial cash amount."""
     try:
         return reset_portfolio(initial_cash)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/api/portfolio/goals", response_model=list[Goal])
+async def get_portfolio_goals():
+    """Get investment goals with current progress."""
+    try:
+        return get_goals()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/api/portfolio/goals", response_model=list[Goal])
+async def post_portfolio_goals(goals: list[dict]):
+    """Set/replace investment goals."""
+    try:
+        return set_goals(goals)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

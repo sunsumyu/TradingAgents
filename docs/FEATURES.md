@@ -1,7 +1,7 @@
-# TradingAgents 功能文档（对标通达信）
+# TradingAgents 功能文档（对标东方财富 + 通达信）
 
-> **文档定位**：本手册从**使用者视角**完整描述平台功能，功能分类参考通达信（TDX）。
-> 架构与接口实现细节见设计文档 [`2026-08-29-tdx-style-platform-design.md`](specs/2026-08-29-tdx-style-platform-design.md)。
+> **文档定位**：本手册从**使用者视角**完整描述平台功能。行情看盘/画线/选股等**交互层**对标通达信（TDX）；**A股数据侧**（§8 特色数据）对标东方财富数据中心口径（Phase 13–14 收敛后的 EM 对照表见 §8）。
+> 架构与接口实现细节见设计文档 [`2026-08-29-tdx-style-platform-design.md`](specs/2026-08-29-tdx-style-platform-design.md)；数据侧建设方案见 [`2026-09-27-eastmoney-aligned-platform-plan.md`](specs/2026-09-27-eastmoney-aligned-platform-plan.md)。
 >
 > **状态标记**：✅ 完整可用 ｜ ⚠️ 部分实现 ｜ 📋 仅后端 API（无界面）｜ 📱 仅前端（无后端）
 
@@ -36,6 +36,12 @@ TradingAgents 是一套**「AI 多智能体分析 + 通达信式看盘工具」*
 
 ```
 TradingAgents
+├── 市场全景图（Phase 8 规划）
+│   ├── 三大指数分时图（上证/深证/创业板）
+│   ├── 涨跌幅排行（上证A股/深证A股 Top10）
+│   ├── 板块排行（行业/概念/风格/地区）
+│   ├── 24小时滚动资讯
+│   └── 市场宽度统计（涨跌家数/成交额）
 ├── 行情看盘
 │   ├── 实时行情（A股批量 / 全球）
 │   ├── 自选股分组管理
@@ -300,23 +306,84 @@ TradingAgents
 
 ## 8. A股特色数据
 
-对标通达信特色数据，统一入口：**仅当代码为 A 股时显示** `AstockFeatureTabs` 标签页；每个面板懒加载，无专属面板的功能回退为格式化文本渲染。
+对标**东方财富数据中心**口径（交互参考通达信），统一入口：`POST /api/astock-features` 单端点分发，共 **66 个 feature key（60 结构化 / 6 passthrough，2026-09-29）**。
 
-| 功能 | 说明 | 面板 | 状态 |
-|------|------|------|------|
-| 筹码分布 | 获利盘比例、成本分布、压力/支撑位 | `ChipPanel` | ✅ |
-| 龙虎榜 | 上榜原因、席位明细、买卖金额 | `DragonTigerPanel` | ✅ |
-| 北向资金 | 沪深港通净流入日度序列 | `NorthboundPanel` | ✅ |
-| 概念板块 | 所属概念、行业、地区标签 | `ConceptPanel` | ✅ |
-| 盈利预测 | 机构 EPS/PE 预测（多年对比） | `ProfitForecastPanel` | ✅ |
-| 解禁日历 | 限售解禁时间表与规模 | `LockupPanel` | ✅ |
-| 人气榜 | 个股热度排名 | `HotStockPanel` | ✅ |
-| 行业对比 | 行业内估值/涨幅对比 | 文本渲染 | ⚠️ 无专属面板 |
-| 股东动向 | 股东增减持 | 文本渲染 | ⚠️ 无专属面板 |
-| 三大报表 | 资产负债表 / 现金流量表 / 利润表 | 文本渲染 | ⚠️ 无专属面板 |
+两个消费入口：
 
-- **API**：`POST /api/astock-features`（统一功能分发端点，13 个 feature key）。
-- **后端模块**：`tradingagents_api/astock_features.py`；数据源为 `a_stock` / `akshare` vendor 的 signal_data 工具族。
+- **个股页** `AstockFeatureTabs`：仅当代码为 A 股时显示，22 个 Tab，面板懒加载。
+- **市场页** `MarketOverviewPage`：25+ 个二级 Tab，市场级 feature 全集。
+
+Envelope 契约：`AstockFeatureResponse { feature, ticker, date, data(结构化), raw_md(原文 markdown) }`；有专属面板的 feature 消费 `data` 结构化分支，无面板的回退 `raw_md` 文本渲染。结构化缓存带 `SCHEMA_VERSIONS` 版本号，parser 变更即失效旧缓存。
+
+### 8.1 个股维度（Phase 5 基础 13 项 + Phase 12 持仓/公告/研报 6 项）
+
+| feature | 说明 | 数据源 | 面板 |
+|---------|------|--------|------|
+| `chip_distribution` | 筹码分布：获利盘/成本分布/压力支撑 | 东财 | `ChipPanel` |
+| `dragon_tiger` | 龙虎榜：上榜原因/席位明细/机构动向 | 东财 | `DragonTigerPanel` |
+| `northbound_flow` | 北向资金：沪深股通净流入+历史 | 东财 | `NorthboundPanel` |
+| `concept_blocks` | 所属概念/行业/地区板块 | 东财 | `ConceptPanel` |
+| `profit_forecast` | 机构 EPS/PE 预测多年对比 | 东财 | `ProfitForecastPanel` |
+| `lockup_expiry` | 限售解禁时间表 | 东财 | `LockupPanel` |
+| `industry_comparison` | 行业内估值/涨幅对比 | 东财 | `IndustryComparisonPanel` |
+| `hot_stocks` | 人气榜排名 | 东财 | `HotStockPanel` |
+| `insider_transactions` | 股东增减持 | 东财 | `InsiderTransactionsPanel` |
+| `balance_sheet` / `income_statement` / `cashflow` | 三大报表（CSV→结构化） | 新浪 | `FinancialStatementPanel` |
+| `holder_num` | 股东户数（每期最新） | 东财 datacenter | `HolderPanel` |
+| `free_holders` | 十大流通股东 | 东财 F10 | `HolderPanel` |
+| `holder_increase` | 增减持明细 | 东财 datacenter | `HolderPanel` |
+| `stock_notices` | 公司公告列表 | 东财 np-anotice | `StockNoticesPanel` |
+| `research_reports` | 券商研报流 | 东财 reportapi | `ResearchReportsPanel` |
+
+### 8.2 市场维度 — 全景/新股/融资/日历/龙虎（Phase 7+）
+
+| feature | 说明 | 数据源 | 面板 |
+|---------|------|--------|------|
+| `ipo_declaration` / `ipo_listing` | 新股发行/上市预告 | 东财 datacenter | `IpoCenterPanel`（结构化） |
+| `margin_detail` | 融资融券明细排行（元/股量纲） | 东财 datacenter | `MarginTradingPanel`（结构化） |
+| `margin_market_stat` | 融资融券市场统计时序 | 东财 datacenter | `MarginTradingPanel`（ECharts） |
+| `margin_industry` | 行业分布 | **占位**（无聚合源） | `MarginTradingPanel` 分支待真源 |
+| `investment_calendar` | 投资日历：新股/停复牌/特别处理/解禁 | 东财+akshare 聚合 | `InvestmentCalendarPanel`（结构化） |
+| `seat_activity` | 龙虎榜席位活跃度排行 | 东财 datacenter | `DragonActivityPanel`（结构化） |
+| `stock_activity` | 龙虎榜个股活跃度排行 | 东财 datacenter | `DragonActivityPanel`（结构化） |
+| `market_statistics` | 市场总貌：规模/成交/投资者 | 沪深交易所+中国结算 | `MarketTablePanel`（结构化） |
+| `futures_position` | 股指期货持仓龙虎榜（3 榜单×合约） | 中金所 ccpm | 结构化（markdown 渲染，面板待建） |
+
+### 8.3 市场维度 — 公司行动/财报/价值/资金流（Phase 9+12 引擎）
+
+| feature | 说明 | 数据源 | 面板 |
+|---------|------|--------|------|
+| `block_trade_detail` / `_industry` / `_market_stat` | 大宗交易明细/行业分布/大盘统计 | 东财 datacenter | `BlockTradePanel` |
+| `dividend_bonus` | 分红送转方案 | 东财 datacenter | `DividendBonusPanel` |
+| `earnings_forecast` / `earnings_express` | 业绩预告/快报 | 东财 datacenter | `EarningsForecastPanel` |
+| `analyst_rating` | 机构评级/目标价 | 东财 datacenter | `AnalystRatingPanel` |
+| `consensus_estimate` | 一致预期：评级汇总+EPS 共识+目标价区间 | 东财 datacenter `RPT_WEB_RESPREDICT` | 结构化（个股/市场双模式，面板挂载待立项） |
+| `institutional_hold` | 机构持仓明细 | 东财 datacenter | `InstitutionalHoldPanel` |
+| `industry_fund_flow` / `concept_fund_flow` | 行业/概念板块资金流排行 | 东财 datacenter | `FundFlowPanel` |
+| `pledge_market` / `_industry` / `_stock` | 股权质押：市场/行业/个股 | 东财 datacenter | `PledgePanel` |
+| `buyback` | 回购明细 | 东财 datacenter | `BuybackPanel` |
+| `convert_bond_list` | 可转债列表 | 东财 datacenter | `ConvertBondPanel` |
+
+### 8.4 通达信数据菜单（Phase 10+13）
+
+| feature | 说明 | 数据源 | 面板 |
+|---------|------|--------|------|
+| `fund_purchase` / `fund_announcement` / `fund_scale` / `fund_open_info` | 基金发行/公告/规模/开放式 | 天天基金（akshare） | `FundDataPanel`（结构化） |
+| `industry_chain_categories` / `_chains` / `_overview` | 产业链分类树/卡片/聚合 | 内置映射+东财概念 | `IndustryChainPanel`（结构化） |
+| `industry_list` / `industry_detail` / `industry_commodity` / `industry_data_overview` | 行业板块/详情/商品价格/聚合 | 东财（akshare） | `IndustryDataPanel`（结构化） |
+| `macro_gdp` / `macro_cpi` / `macro_pmi` | GDP/CPI/PMI 宏观三件套 | 东财（akshare） | `MacroAnalysisPanel`（结构化） |
+| `survey_interaction` | 机构调研统计 | 东财 datacenter | `MarketTablePanel`（结构化） |
+| `company_name_changes` | 公司更名记录（近90天窗口） | **深交所官网** | 结构化（markdown 渲染） |
+| `st_changes` | 实施/撤销ST（由更名记录派生） | 深交所官网（派生） | 结构化（markdown 渲染） |
+| `neeq_abnormal_trade` | 三板异常交易 | **无公开源** | 显式警示（工单 09） |
+| `hk_ipo` | 港股新股：招股中 + 近期已上市 | **阿斯达克 aastocks**（东财页已 404 下线） | 结构化（markdown 渲染） |
+| `us_ipo` | 美股 IPO | **无公开源** | 显式警示（工单 09） |
+| `macro_overview` | 宏观聚合（GDP/CPI/PMI 复合） | 同单项 | 无消费者，待面板立项 |
+| `stock_info_panel` | 个股信息聚合面板 | 东财 | 无消费者，待面板立项 |
+| `insider_change_chart` | 增减持月度图表 | TDX | 无消费者，待面板立项 |
+
+- **API**：`POST /api/astock-features`（body: `{ feature, ticker, date, params }`）；`params` 透传分页/周期/市场等参数。
+- **后端模块**：`tradingagents_api/astock_features.py`（FEATURE_TABLE 分发 + 58 个结构化 parser，快照测试 `tests/test_astock_parsers.py` 140+ 用例）；数据源实现在 `tradingagents/dataflows/a_stock/*`。
 
 ---
 
@@ -367,7 +434,14 @@ TradingAgents
 - **无数据哨兵**：所有源都无数据时返回明确 `NO_DATA_AVAILABLE` 说明（禁止模型编造数值）。
 - **后端模块**：`tradingagents/dataflows/interface.py` → `route_to_vendor()`。
 
-### 10.2 SQLite 本地缓存 ✅
+### 10.2 PostgreSQL 缓存 + 永久归档 ✅
+
+- **TTL 缓存（`data_cache` 表）**：行情与指标数据写 PG 缓存（PG 不可用时降级 SQLite 落盘），交易时段 TTL 4h / 盘后 24h，可按标的/类型清理。`POST /api/cache/clear` 只清此表。
+- **永久归档（`data_history` 表）**：所有经 `CacheManager.set()` 写入的市场与个股数据同步归档一份每日快照，**永不删除**——清缓存、TTL 过期均不影响归档。主键 `(ticker, data_type, trade_date, param_hash)`：同日重复写入仅更新（保留当日最终快照），不同参数变体各自保留。`date` 为非日期值（如 `"latest"`）时按当天归档。
+- **归档查询 API**：`GET /api/history?data_type=market_overview[&ticker=&date=&limit=]` 查快照明细；`GET /api/history/types` 列出已归档类型及天数范围。
+- **后端模块**：`tradingagents/cache/manager.py` → `CacheManager._pg_archive()`（`set()` 写穿透）。
+
+### 10.3 SQLite 本地缓存 ✅
 
 - **功能**：行情与指标数据落盘缓存（每标的一个 .db，WAL 模式避免锁冲突），TTL 过期（默认 24h），可强制刷新、按标的/按时间清理。
 - **容量上限**：500MB。
@@ -398,7 +472,7 @@ FastAPI 后端（默认 `http://127.0.0.1:8000`），共 30+ 端点：
 | POST | `/api/chart-data` | K线 + 指标数据 |
 | POST | `/api/realtime-prices` | 批量实时报价 |
 | WS | `/ws/realtime` | 实时行情推送 |
-| POST | `/api/astock-features` | A股特色数据分发（13 项） |
+| POST | `/api/astock-features` | A股特色数据分发（66 个 feature key，60 结构化，见 §8） |
 
 ### 交易工具
 
@@ -428,6 +502,7 @@ FastAPI 后端（默认 `http://127.0.0.1:8000`），共 30+ 端点：
 
 | 通达信功能 | 本平台对应 | 状态 |
 |-----------|-----------|------|
+| **市场全景图** | — | 📋 Phase 8 规划 |
 | K线图（多周期） | TradingViewChart + 13 种周期 | ✅ |
 | 分时图 | 实时行情轮询 + 日内分钟K | ⚠️ 无独立分时页面 |
 | 技术指标（200+） | 25 种（常用集）+ 参数调整 | ⚠️ 数量少于 TDX，核心指标齐 |
@@ -447,7 +522,11 @@ FastAPI 后端（默认 `http://127.0.0.1:8000`），共 30+ 端点：
 | 盈利预测 | ProfitForecastPanel | ✅ |
 | 解禁日历 | LockupPanel | ✅ |
 | 人气榜 | HotStockPanel | ✅ |
-| 三大报表 | 文本渲染 | ⚠️ |
+| 三大报表 | FinancialStatementPanel | ✅ |
+| 新股中心 | IpoCenterPanel（发行+上市预告，结构化） | ✅ |
+| 融资融券 | MarginTradingPanel（明细+市场统计，结构化） | ✅ |
+| 投资日历（综合） | InvestmentCalendarPanel（结构化） | ✅ |
+| 龙虎榜席位活跃度 | DragonActivityPanel（席位+个股排行，结构化） | ✅ |
 | 消息面/资讯 | NewsFeed + 新闻智能体 | ✅ |
 | 交易下单（实盘） | 无（合规边界，仅模拟） | ❌ 不做 |
 | **AI 多智能体研究** | 通达信没有 | ⭐ 本平台独有 |
@@ -462,15 +541,19 @@ FastAPI 后端（默认 `http://127.0.0.1:8000`），共 30+ 端点：
 | # | 差距 | 现状 | 方向 |
 |---|------|------|------|
 | 1 | 回测无 GUI | `POST /api/backtest` 就绪 | 报告页加"回测此决策"按钮 + 结果图表 |
-| 2 | 预警条件 3/7 求值 | indicator/cross 4 种已定义未实现 | 补齐 `check_alerts()` 分支 + 后端预警端点 |
-| 3 | 自然语言选股为正则解析 | 覆盖常见句式，复杂组合失败 | 接入 LLM 客户端做结构化转换 |
+| 2 | 预警条件 3/7 求值 | indicator/cross 4 种已定义未实现 | 补齐 `check_alerts()` 分支 |
+| 3 | 自然语言选股引擎离线路径为正则 | HTTP 服务层已接 LLM 结构化解析 | 引擎 `screen_natural()` 保留为离线/回退 |
 | 4 | `export_image` 占位 | 返回空 bytes | 前端 ECharts 已有截图；后端补 playwright/matplotlib 渲染 |
-| 5 | 预警/自选股仅存本地 | localStorage，换设备不同步 | 后端持久化端点 |
-| 6 | 分时图缺独立页 | 实时行情 + 分钟K可用 | 1 分针分时走势图（均价线/量） |
+| 5 | 自选股仅存本地 | 预警已同步后端（`/api/alerts`）；自选股仍 localStorage | watchlist 后端持久化端点 |
+| 6 | 分时图缺独立页 | 实时行情 + 分钟K可用 | 1 分钟分时走势图（均价线/量） |
 | 7 | 指标数量 25 vs TDX 200+ | 常用核心已覆盖 | 按需增量（EXPMA、薛斯通道、神奇九转等） |
-| 8 | 行业对比/股东动向/三大报表无面板 | raw markdown 渲染 | 专属可视化面板 |
-| 9 | 性能基准测试未建 | 设计文档 §5 目标（渲染<100ms 等） | 补 `test_performance.py` 基准 |
+| 8 | 3 个 feature 无前端消费者 | `macro_overview` / `stock_info_panel` / `insider_change_chart` 结构化后无面板挂载 | 随对应面板立项（市场页/个股页 Tab） |
+| 9 | `margin_industry` 后端占位 | 聚合接口仅输出概览，无行业分布数据 | 接东财 datacenter 真源或个股×行业自聚合 |
+| 10 | `hk_ipo` 数据错标 | 现源返回 A 股数据（前端已挂警示） | 港交所/阿斯达克真源接入（工单 08 待裁决） |
+| 11 | `us_ipo` / `neeq` 无公开源 | 显式「暂不提供」警示 | SEC EDGAR / neeq.com.cn 官方站解析器 |
+
+> 已消除的历史差距：新股中心、融资融券、投资日历、席位/个股活跃度、市场全景图页面、行业对比/股东动向/三大报表专属面板、性能基准测试（`tests/test_performance_benchmarks.py`）——均已在 Phase 7–13 落地。
 
 ---
 
-*文档基于 2026-08-29 代码库事实编写；全量功能由 1025 个自动化测试覆盖（其中 5 大引擎模块 288 个）。*
+*交互层功能基于 2026-08-29 代码库事实编写；§8 A股数据侧按 2026-09-28 Phase 13 收敛后的状态重写（66 feature / 60 结构化）。全量功能由 1232 个后端测试 + 130 个前端测试覆盖。*

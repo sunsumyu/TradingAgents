@@ -1,12 +1,11 @@
-"""SQLite-backed per-ticker cache for market data results.
+"""PostgreSQL-backed shared cache for market data results.
 
 Stores OHLCV, technical indicators, A-stock features, and fund flow results
-so repeated chart loads and feature requests hit the local DB instead of
-calling third-party APIs.  Realtime prices and LLM results are excluded
-(realtime must be live; LLM has its own cache in ``llm_cache.py``).
+so repeated chart loads and feature requests hit the central DB instead of
+calling third-party APIs.  All tickers share a single PostgreSQL database
+for better concurrency and reliability.
 
-Design mirrors ``LLMCache`` — each ticker gets its own ``.db`` file so
-concurrent requests never contend on locks.
+Falls back to SQLite if PostgreSQL is unreachable.
 """
 
 from __future__ import annotations
@@ -14,10 +13,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import sqlite3
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import Any
+
+from tradingagents.config import PG_DSN
 
 logger = logging.getLogger(__name__)
 
@@ -27,36 +27,27 @@ _TTL_TRADING_HOURS = 4 * 3600    # 4 hours during market hours
 _TTL_AFTER_HOURS = 24 * 3600     # 24 hours after market close
 _TTL_OHLCV = 24 * 3600           # OHLCV always 24h (daily bars change slowly)
 
-# A-share market hours in UTC: 01:30–07:00 (09:30–15:00 CST)
-_ASTOCK_OPEN_UTC = (1, 30)   # 01:30 UTC = 09:30 CST
-_ASTOCK_CLOSE_UTC = (7, 0)   # 07:00 UTC = 15:00 CST
-
-# US market hours in UTC: 13:30–20:00 (09:30–16:00 ET)
+_ASTOCK_OPEN_UTC = (1, 30)
+_ASTOCK_CLOSE_UTC = (7, 0)
 _US_OPEN_UTC = (13, 30)
 _US_CLOSE_UTC = (20, 0)
 
 
 def _is_market_hours() -> bool:
-    """Check if any major market is currently open (rough heuristic)."""
     now = datetime.now(timezone.utc)
-    h, m = now.hour, now.minute
-    t = h * 60 + m
-
+    t = now.hour * 60 + now.minute
     a_open = _ASTOCK_OPEN_UTC[0] * 60 + _ASTOCK_OPEN_UTC[1]
     a_close = _ASTOCK_CLOSE_UTC[0] * 60 + _ASTOCK_CLOSE_UTC[1]
     if a_open <= t <= a_close:
         return True
-
     us_open = _US_OPEN_UTC[0] * 60 + _US_OPEN_UTC[1]
     us_close = _US_CLOSE_UTC[0] * 60 + _US_CLOSE_UTC[1]
     if us_open <= t <= us_close:
         return True
-
     return False
 
 
 def _ttl_for_type(data_type: str) -> int:
-    """Return TTL in seconds for a given data type."""
     if data_type == "ohlcv":
         return _TTL_OHLCV
     if _is_market_hours():
@@ -64,179 +55,306 @@ def _ttl_for_type(data_type: str) -> int:
     return _TTL_AFTER_HOURS
 
 
-# ── Cache key construction ────────────────────────────────────────────────────
-
 def make_cache_key(data_type: str, **params: object) -> str:
-    """Build a deterministic cache key from data type and parameters.
-
-    Example::
-
-        make_cache_key("ohlcv", ticker="600519", start="2026-01-01", end="2026-08-28")
-        # -> "ohlcv:a1b2c3d4e5f6..."
-    """
     payload = json.dumps(params, sort_keys=True, ensure_ascii=False)
     param_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
     return f"{data_type}:{param_hash}"
 
 
-# ── DataCache class ───────────────────────────────────────────────────────────
+# ── PostgreSQL connection pool ────────────────────────────────────────────────
+
+_pg_pool: Any = None
+_pg_available: bool | None = None  # None = not checked yet
+
+_PG_DSN = PG_DSN
+
+_CREATE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS data_cache (
+    cache_key   VARCHAR(256) NOT NULL,
+    ticker      VARCHAR(16)  NOT NULL DEFAULT '',
+    data_type   VARCHAR(64)  NOT NULL,
+    result      JSONB        NOT NULL,
+    created_at  DOUBLE PRECISION NOT NULL,
+    access_count INTEGER DEFAULT 1,
+    PRIMARY KEY (cache_key, ticker)
+);
+CREATE INDEX IF NOT EXISTS idx_dc_data_type ON data_cache(data_type);
+CREATE INDEX IF NOT EXISTS idx_dc_ticker ON data_cache(ticker);
+CREATE INDEX IF NOT EXISTS idx_dc_created ON data_cache(created_at);
+"""
+
+
+def _get_pg_pool():
+    """Lazy-init a psycopg2 connection pool."""
+    global _pg_pool, _pg_available
+    if _pg_available is False:
+        return None
+    if _pg_pool is not None:
+        return _pg_pool
+    try:
+        import psycopg2
+        from psycopg2 import pool
+        _pg_pool = pool.ThreadedConnectionPool(1, 10, _PG_DSN)
+        _pg_available = True
+        # Ensure table exists
+        conn = _pg_pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                # Bootstrap DDL only when the table is absent — the runtime
+                # account holds no table ownership, so re-running it would
+                # raise even with IF NOT EXISTS.
+                cur.execute("SELECT to_regclass('public.data_cache')")
+                if cur.fetchone()[0] is None:
+                    cur.execute(_CREATE_TABLE_SQL)
+            conn.commit()
+        finally:
+            _pg_pool.putconn(conn)
+        logger.info("PostgreSQL cache pool connected (tradingagents)")
+        return _pg_pool
+    except Exception as exc:
+        _pg_available = False
+        logger.warning("PostgreSQL unavailable, falling back to SQLite: %s", exc)
+        return None
+
 
 class DataCache:
-    """Per-ticker SQLite cache for market data results.
+    """Shared PostgreSQL cache for market data results.
 
     Parameters
     ----------
     data_dir:
-        Root cache directory (typically ``config["data_cache_dir"]``).
+        Fallback SQLite directory (used when PostgreSQL is unreachable).
     ticker:
-        Ticker symbol — determines the DB file name.
+        Ticker symbol.
     """
 
-    def __init__(self, data_dir: str | Path, ticker: str) -> None:
-        self._db_path = Path(data_dir) / "data_cache"
-        self._db_path.mkdir(parents=True, exist_ok=True)
-        self._db_file = self._db_path / f"{ticker.upper()}.db"
-        self._conn = sqlite3.connect(str(self._db_file), check_same_thread=False)
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS data_cache (
-                cache_key   TEXT PRIMARY KEY,
-                data_type   TEXT NOT NULL,
-                result      TEXT NOT NULL,
-                created_at  REAL NOT NULL,
-                access_count INTEGER DEFAULT 1
-            )
-            """
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_data_type ON data_cache(data_type)"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_created ON data_cache(created_at)"
-        )
-        self._conn.commit()
-
+    def __init__(self, data_dir: str, ticker: str) -> None:
+        self._ticker = ticker.upper()
         self._hits = 0
         self._misses = 0
+        self._pg = _get_pg_pool()
+
+        # Fallback to SQLite if PostgreSQL unavailable
+        self._sqlite = None
+        if self._pg is None:
+            self._init_sqlite(data_dir)
+
+    def _init_sqlite(self, data_dir: str) -> None:
+        import sqlite3
+        from pathlib import Path
+        db_path = Path(data_dir) / "data_cache"
+        db_path.mkdir(parents=True, exist_ok=True)
+        self._sqlite = sqlite3.connect(str(db_path / f"{self._ticker}.db"), check_same_thread=False)
+        self._sqlite.execute("PRAGMA journal_mode=WAL")
+        self._sqlite.execute("""
+            CREATE TABLE IF NOT EXISTS data_cache (
+                cache_key TEXT PRIMARY KEY, data_type TEXT NOT NULL,
+                result TEXT NOT NULL, created_at REAL NOT NULL,
+                access_count INTEGER DEFAULT 1
+            )
+        """)
+        self._sqlite.execute("CREATE INDEX IF NOT EXISTS idx_data_type ON data_cache(data_type)")
+        self._sqlite.commit()
 
     # ── Public API ────────────────────────────────────────────────────────
 
     def get(self, cache_key: str, ttl_seconds: int | None = None) -> dict | None:
-        """Return the cached result dict, or ``None`` on miss / expiry.
-
-        If *ttl_seconds* is ``None``, the TTL is computed automatically from
-        the data type stored in the row.
-        """
-        row = self._conn.execute(
-            "SELECT result, created_at, data_type FROM data_cache WHERE cache_key = ?",
-            (cache_key,),
-        ).fetchone()
-
-        if row is None:
-            self._misses += 1
-            return None
-
-        result_json, created_at, data_type = row
-        effective_ttl = ttl_seconds if ttl_seconds is not None else _ttl_for_type(data_type)
-
-        if time.time() - created_at > effective_ttl:
-            self._conn.execute(
-                "DELETE FROM data_cache WHERE cache_key = ?", (cache_key,)
-            )
-            self._conn.commit()
-            self._misses += 1
-            return None
-
-        try:
-            self._conn.execute(
-                "UPDATE data_cache SET access_count = access_count + 1 "
-                "WHERE cache_key = ?",
-                (cache_key,),
-            )
-            self._conn.commit()
-        except sqlite3.OperationalError:
-            pass
-
-        self._hits += 1
-        return json.loads(result_json)
+        if self._pg:
+            return self._get_pg(cache_key, ttl_seconds)
+        if self._sqlite:
+            return self._get_sqlite(cache_key, ttl_seconds)
+        self._misses += 1
+        return None
 
     def set(self, cache_key: str, result: dict, data_type: str = "unknown") -> None:
-        """Store a serialised result."""
-        try:
-            self._conn.execute(
-                """
-                INSERT OR REPLACE INTO data_cache
-                    (cache_key, data_type, result, created_at, access_count)
-                VALUES (?, ?, ?, ?, 1)
-                """,
-                (cache_key, data_type, json.dumps(result, ensure_ascii=False), time.time()),
-            )
-            self._conn.commit()
-        except sqlite3.OperationalError as exc:
-            logger.warning("Data cache write failed: %s", exc)
+        if self._pg:
+            self._set_pg(cache_key, result, data_type)
+        elif self._sqlite:
+            self._set_sqlite(cache_key, result, data_type)
 
     def has(self, cache_key: str, ttl_seconds: int | None = None) -> bool:
-        """Check if a valid (non-expired) entry exists."""
         return self.get(cache_key, ttl_seconds) is not None
 
     def clear(self, data_type: str | None = None) -> int:
-        """Delete all entries, or only those matching *data_type*."""
-        if data_type:
-            cur = self._conn.execute(
-                "DELETE FROM data_cache WHERE data_type = ?", (data_type,)
-            )
-        else:
-            cur = self._conn.execute("DELETE FROM data_cache")
-        self._conn.commit()
-        return cur.rowcount
+        if self._pg:
+            conn = self._pg.getconn()
+            try:
+                with conn.cursor() as cur:
+                    if data_type:
+                        cur.execute("DELETE FROM data_cache WHERE ticker = %s AND data_type = %s", (self._ticker, data_type))
+                    else:
+                        cur.execute("DELETE FROM data_cache WHERE ticker = %s", (self._ticker,))
+                    n = cur.rowcount
+                conn.commit()
+                return n
+            finally:
+                self._pg.putconn(conn)
+        elif self._sqlite:
+            if data_type:
+                cur = self._sqlite.execute("DELETE FROM data_cache WHERE data_type = ?", (data_type,))
+            else:
+                cur = self._sqlite.execute("DELETE FROM data_cache")
+            self._sqlite.commit()
+            return cur.rowcount
+        return 0
 
     def prune_expired(self) -> int:
-        """Remove all expired entries across all types.  Returns row count."""
-        now = time.time()
-        # OHLCV uses 24h; others use dynamic TTL.  Prune conservatively at 24h.
-        cutoff = now - _TTL_AFTER_HOURS
-        cur = self._conn.execute(
-            "DELETE FROM data_cache WHERE created_at < ?", (cutoff,)
-        )
-        self._conn.commit()
-        return cur.rowcount
+        cutoff = time.time() - _TTL_AFTER_HOURS
+        if self._pg:
+            conn = self._pg.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM data_cache WHERE created_at < %s", (cutoff,))
+                    n = cur.rowcount
+                conn.commit()
+                return n
+            finally:
+                self._pg.putconn(conn)
+        elif self._sqlite:
+            cur = self._sqlite.execute("DELETE FROM data_cache WHERE created_at < ?", (cutoff,))
+            self._sqlite.commit()
+            return cur.rowcount
+        return 0
 
     def stats(self) -> dict:
-        """Return session hit/miss counts and total stored entries."""
-        total = self._conn.execute(
-            "SELECT COUNT(*) FROM data_cache"
-        ).fetchone()[0]
-        by_type = {}
-        for row in self._conn.execute(
-            "SELECT data_type, COUNT(*) FROM data_cache GROUP BY data_type"
-        ):
-            by_type[row[0]] = row[1]
+        total = 0
+        by_type: dict = {}
+        if self._pg:
+            conn = self._pg.getconn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT COUNT(*) FROM data_cache WHERE ticker = %s", (self._ticker,))
+                    total = cur.fetchone()[0]
+                    cur.execute("SELECT data_type, COUNT(*) FROM data_cache WHERE ticker = %s GROUP BY data_type", (self._ticker,))
+                    for row in cur.fetchall():
+                        by_type[row[0]] = row[1]
+            finally:
+                self._pg.putconn(conn)
+        elif self._sqlite:
+            total = self._sqlite.execute("SELECT COUNT(*) FROM data_cache").fetchone()[0]
+            for row in self._sqlite.execute("SELECT data_type, COUNT(*) FROM data_cache GROUP BY data_type"):
+                by_type[row[0]] = row[1]
         return {
-            "ticker": self._db_file.stem,
+            "ticker": self._ticker,
             "hits": self._hits,
             "misses": self._misses,
             "total_entries": total,
             "by_type": by_type,
             "hit_rate": (
                 f"{self._hits / (self._hits + self._misses) * 100:.1f}%"
-                if (self._hits + self._misses) > 0
-                else "n/a"
+                if (self._hits + self._misses) > 0 else "n/a"
             ),
         }
 
     def close(self) -> None:
-        """Close the underlying SQLite connection."""
-        try:
-            self._conn.close()
-        except Exception:
-            pass
+        if self._sqlite:
+            try:
+                self._sqlite.close()
+            except Exception:
+                pass
 
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
         self.close()
+
+    # ── PostgreSQL internals ──────────────────────────────────────────────
+
+    def _get_pg(self, cache_key: str, ttl_seconds: int | None) -> dict | None:
+        conn = self._pg.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT result, created_at, data_type FROM data_cache WHERE cache_key = %s AND ticker = %s",
+                    (cache_key, self._ticker),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    self._misses += 1
+                    return None
+                result_json, created_at, data_type = row
+                effective_ttl = ttl_seconds if ttl_seconds is not None else _ttl_for_type(data_type)
+                if time.time() - created_at > effective_ttl:
+                    cur.execute("DELETE FROM data_cache WHERE cache_key = %s AND ticker = %s", (cache_key, self._ticker))
+                    conn.commit()
+                    self._misses += 1
+                    return None
+                cur.execute(
+                    "UPDATE data_cache SET access_count = access_count + 1 WHERE cache_key = %s AND ticker = %s",
+                    (cache_key, self._ticker),
+                )
+            conn.commit()
+            self._hits += 1
+            if isinstance(result_json, str):
+                return json.loads(result_json)
+            return result_json  # already dict (jsonb)
+        except Exception as exc:
+            conn.rollback()
+            logger.warning("PG cache read failed: %s", exc)
+            self._misses += 1
+            return None
+        finally:
+            self._pg.putconn(conn)
+
+    def _set_pg(self, cache_key: str, result: dict, data_type: str) -> None:
+        conn = self._pg.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO data_cache (cache_key, ticker, data_type, result, created_at, access_count)
+                       VALUES (%s, %s, %s, %s, %s, 1)
+                       ON CONFLICT (cache_key, ticker) DO UPDATE SET
+                         result = EXCLUDED.result,
+                         data_type = EXCLUDED.data_type,
+                         created_at = EXCLUDED.created_at,
+                         access_count = data_cache.access_count + 1""",
+                    (cache_key, self._ticker, data_type,
+                     json.dumps(result, ensure_ascii=False), time.time()),
+                )
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            logger.warning("PG cache write failed: %s", exc)
+        finally:
+            self._pg.putconn(conn)
+
+    # ── SQLite fallback internals ─────────────────────────────────────────
+
+    def _get_sqlite(self, cache_key: str, ttl_seconds: int | None) -> dict | None:
+        import json as _json
+        row = self._sqlite.execute(
+            "SELECT result, created_at, data_type FROM data_cache WHERE cache_key = ?",
+            (cache_key,),
+        ).fetchone()
+        if row is None:
+            self._misses += 1
+            return None
+        result_json, created_at, data_type = row
+        effective_ttl = ttl_seconds if ttl_seconds is not None else _ttl_for_type(data_type)
+        if time.time() - created_at > effective_ttl:
+            self._sqlite.execute("DELETE FROM data_cache WHERE cache_key = ?", (cache_key,))
+            self._sqlite.commit()
+            self._misses += 1
+            return None
+        try:
+            self._sqlite.execute("UPDATE data_cache SET access_count = access_count + 1 WHERE cache_key = ?", (cache_key,))
+            self._sqlite.commit()
+        except Exception:
+            pass
+        self._hits += 1
+        return _json.loads(result_json)
+
+    def _set_sqlite(self, cache_key: str, result: dict, data_type: str) -> None:
+        import json as _json
+        try:
+            self._sqlite.execute(
+                "INSERT OR REPLACE INTO data_cache (cache_key, data_type, result, created_at, access_count) VALUES (?, ?, ?, ?, 1)",
+                (cache_key, data_type, _json.dumps(result, ensure_ascii=False), time.time()),
+            )
+            self._sqlite.commit()
+        except Exception as exc:
+            logger.warning("SQLite cache write failed: %s", exc)
 
 
 # ── Module-level helper ───────────────────────────────────────────────────────

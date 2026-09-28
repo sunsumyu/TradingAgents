@@ -17,7 +17,9 @@ export type Phase =
   | "report"
   | "error"
   | "screener"
-  | "portfolio";
+  | "portfolio"
+  | "hot_stocks"
+  | "market_overview";
 
 interface CheckpointInfo {
   has_checkpoint: boolean;
@@ -143,7 +145,7 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
       } catch (e) {
         const msg =
           e instanceof TypeError
-            ? "无法连接后端服务（127.0.0.1:8420）。请运行 `python start_gui.py` 启动后端后再试。"
+            ? "无法连接后端服务（127.0.0.1:8425）。请运行 `python start_gui.py` 启动后端后再试。"
             : e instanceof Error
               ? e.message
               : String(e);

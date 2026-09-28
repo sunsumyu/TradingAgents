@@ -6,6 +6,7 @@ import AstockFeatureTabs from "./astock/AstockFeatureTabs";
 import { useMarketDataStore } from "../stores/useMarketDataStore";
 import { useAnalysisStore } from "../stores/useAnalysisStore";
 import { useConfigStore } from "../stores/useConfigStore";
+import { formatDateDisplay } from "../lib/dateFormat";
 
 export default function MarketDataPanel() {
   const data = useMarketDataStore((s) => s.data);
@@ -13,6 +14,7 @@ export default function MarketDataPanel() {
   const navigateTo = useAnalysisStore((s) => s.navigateTo);
   const startAnalysis = useAnalysisStore((s) => s.startAnalysis);
   const config = useConfigStore((s) => s.config);
+  const lang = config.language === "English" ? "en" : "zh";
 
   // ── Loading state — show immediately when data hasn't arrived yet ──
   if (!data) {
@@ -58,7 +60,7 @@ export default function MarketDataPanel() {
           返回配置
         </button>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[11px] text-[#787B86]">{data.date}</span>
+          <span className="text-[11px] text-[#787B86]">{formatDateDisplay(data.date, lang)}</span>
           <button
             className="btn-primary"
             onClick={() => startAnalysis(config)}
@@ -72,15 +74,19 @@ export default function MarketDataPanel() {
       {/* ── TradingView Chart (full screen when chart data exists) ── */}
       {hasAnyChart ? (
         <div className="flex flex-col flex-1 min-h-0">
-          <TradingViewLayout
-            kline={data.kline}
-            macd={data.macd}
-            rsi={data.rsi}
-            bollinger={data.bollinger}
-            ticker={data.ticker}
-            name={data.fundamentals?.name ?? undefined}
-          />
-          <AstockFeatureTabs ticker={data.ticker} date={data.date} />
+          <div className="flex-1 min-h-0">
+            <TradingViewLayout
+              kline={data.kline}
+              macd={data.macd}
+              rsi={data.rsi}
+              bollinger={data.bollinger}
+              ticker={data.ticker}
+              name={data.fundamentals?.name ?? undefined}
+            />
+          </div>
+          <div className="min-h-[120px] flex-shrink-0 border-t border-[#1E222D]">
+            <AstockFeatureTabs ticker={data.ticker} date={data.date} />
+          </div>
         </div>
       ) : (
         <>
@@ -98,7 +104,9 @@ export default function MarketDataPanel() {
               </div>
             )}
           </div>
-          <AstockFeatureTabs ticker={data.ticker} date={data.date} />
+          <div className="h-[200px] flex-shrink-0 border-t border-[#1E222D]">
+            <AstockFeatureTabs ticker={data.ticker} date={data.date} />
+          </div>
         </>
       )}
     </div>

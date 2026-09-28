@@ -7,6 +7,7 @@
  */
 
 import type { ConceptBlocksData, ConceptBlockItem } from "../../lib/types";
+import MarkdownRenderer from "../shared/Markdown";
 
 interface Props {
   data: ConceptBlocksData;
@@ -24,15 +25,13 @@ function colorFor(cat: string) {
 }
 
 export default function ConceptPanel({ data, rawMd }: Props) {
-  const { blocks, concepts } = data;
+  const { blocks = [], concepts = [] } = data ?? ({} as ConceptBlocksData);
 
   if (!blocks.length && !concepts.length) {
     return (
       <div className="h-full overflow-y-auto">
         {rawMd ? (
-          <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-            {rawMd}
-          </pre>
+          <MarkdownRenderer markdown={rawMd} className="p-3" />
         ) : (
           <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
             暂无数据

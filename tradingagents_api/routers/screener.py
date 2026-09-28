@@ -21,6 +21,7 @@ async def post_screener(request: ScreenerRequest):
     then executes those filters against A-stock data and returns ranked results.
     """
     from tradingagents.default_config import DEFAULT_CONFIG
+    from ..runner.config_builder import build_screener_config
 
     try:
         if request.template_id:
@@ -28,7 +29,7 @@ async def post_screener(request: ScreenerRequest):
                 template_id=request.template_id,
                 max_results=request.max_results,
             )
-        config = dict(DEFAULT_CONFIG)
+        config = build_screener_config(request)
         return run_screener(
             query=request.query,
             config=config,

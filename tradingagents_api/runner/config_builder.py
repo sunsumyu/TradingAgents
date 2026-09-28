@@ -73,6 +73,40 @@ def build_config(request: AnalyzeRequest) -> dict:
     return config
 
 
+def build_screener_config(request: 'ScreenerRequest') -> dict:
+    """Build a config dict for the screener from the API request, merging over defaults."""
+    from ..schemas import ScreenerRequest
+    config = deepcopy(DEFAULT_CONFIG)
+
+    # Multi-platform LLM config: each model type can use independent providers
+    if request.quick_model:
+        config["quick_llm_provider"] = request.quick_model.provider.lower()
+        config["quick_think_llm"] = request.quick_model.model
+        if request.quick_model.api_key:
+            config["quick_api_key"] = request.quick_model.api_key
+        if request.quick_model.backend_url:
+            config["backend_url_quick"] = request.quick_model.backend_url
+
+    if request.deep_model:
+        config["deep_llm_provider"] = request.deep_model.provider.lower()
+        config["deep_think_llm"] = request.deep_model.model
+        if request.deep_model.api_key:
+            config["deep_api_key"] = request.deep_model.api_key
+        if request.deep_model.backend_url:
+            config["backend_url_deep"] = request.deep_model.backend_url
+
+    # Legacy single-provider config (backward compatible)
+    # Only set if quick_model/deep_model not provided
+    if not request.quick_model and not request.deep_model:
+        config["llm_provider"] = request.llm_provider.lower()
+        if request.backend_url:
+            config["backend_url"] = request.backend_url
+        if request.api_key:
+            config["api_key"] = request.api_key
+
+    return config
+
+
 # ---------------------------------------------------------------------------
 # Analysis timeout scaling
 # ---------------------------------------------------------------------------

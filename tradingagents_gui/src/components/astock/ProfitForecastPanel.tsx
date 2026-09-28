@@ -10,6 +10,7 @@
 import { useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import type { ProfitForecastData } from "../../lib/types";
+import MarkdownRenderer from "../shared/Markdown";
 
 interface Props {
   data: ProfitForecastData;
@@ -21,7 +22,7 @@ function fmt(v: number | null | undefined, digits = 2): string {
 }
 
 export default function ProfitForecastPanel({ data, rawMd }: Props) {
-  const { years, current_price, pe_ttm, forward_pe, peg } = data;
+  const { years = [], current_price, pe_ttm, forward_pe, peg } = data ?? ({} as ProfitForecastData);
 
   const option = useMemo(() => {
     if (!years.length) return null;
@@ -133,9 +134,7 @@ export default function ProfitForecastPanel({ data, rawMd }: Props) {
     return (
       <div className="h-full overflow-y-auto">
         {rawMd ? (
-          <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-            {rawMd}
-          </pre>
+          <MarkdownRenderer markdown={rawMd} className="p-3" />
         ) : (
           <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
             暂无数据

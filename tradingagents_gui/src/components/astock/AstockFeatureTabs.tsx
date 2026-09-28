@@ -7,8 +7,11 @@
  *   another tab before the response arrives.
  * - Only renders for A-share codes (6-digit); hidden for global tickers.
  * - Each feature panel receives { data, raw_md, loading, error }.
- * - Currently only chip_distribution has a dedicated panel (ticket 5.02);
- *   all other features fall back to raw_md rendering.
+ * - Tabs are registered in ASTOCK_FEATURE_TABS (lib/types.ts); the key set must
+ *   stay in sync with the backend FEATURE_TABLE (enforced by
+ *   tests/test_feature_key_parity.py).
+ * - Panels that have a dedicated component render structured data with the
+ *   raw_md fallback; anything else falls back to raw_md rendering.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,8 +40,17 @@ import ProfitForecastPanel from "./ProfitForecastPanel";
 import LockupPanel from "./LockupPanel";
 import HotStockPanel from "./HotStockPanel";
 import FinancialStatementPanel from "./FinancialStatementPanel";
+import MarkdownRenderer from "../shared/Markdown";
 import IndustryComparisonPanel from "./IndustryComparisonPanel";
 import InsiderTransactionsPanel from "./InsiderTransactionsPanel";
+import BlockTradePanel from "./BlockTradePanel";
+import DividendBonusPanel from "./DividendBonusPanel";
+import EarningsForecastPanel from "./EarningsForecastPanel";
+import AnalystRatingPanel from "./AnalystRatingPanel";
+import InstitutionalHoldPanel from "./InstitutionalHoldPanel";
+import HolderPanel from "./HolderPanel";
+import StockNoticesPanel from "./StockNoticesPanel";
+import ResearchReportsPanel from "./ResearchReportsPanel";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -114,9 +126,9 @@ export default function AstockFeatureTabs({ ticker, date }: Props) {
   const activeData = activeTab ? cache.get(activeTab) : null;
 
   return (
-    <div className="border-t border-[#2B2B43] bg-[#131722]">
+    <div className="border-t border-line bg-bg-secondary">
       {/* Tab strip */}
-      <div className="flex items-center gap-0 overflow-x-auto border-b border-[#2B2B43] px-2">
+      <div className="flex items-center gap-0 overflow-x-auto border-b border-line px-2">
         {ASTOCK_FEATURE_TABS.map((tab) => {
           const isActive = activeTab === tab.key;
           return (
@@ -125,8 +137,8 @@ export default function AstockFeatureTabs({ ticker, date }: Props) {
               onClick={() => handleTabClick(tab.key)}
               className={`px-3 py-2 text-xs whitespace-nowrap transition-colors ${
                 isActive
-                  ? "text-[#2962FF] border-b-2 border-[#2962FF]"
-                  : "text-[#787B86] hover:text-[#D1D4DC]"
+                  ? "text-accent border-b-2 border-accent"
+                  : "text-text-secondary hover:text-text-primary"
               }`}
             >
               {tab.label}
@@ -138,20 +150,20 @@ export default function AstockFeatureTabs({ ticker, date }: Props) {
       {/* Feature content */}
       <div style={{ height: 320 }} className="relative">
         {!activeTab ? (
-          <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
+          <div className="flex items-center justify-center h-full text-text-secondary text-xs">
             点击上方标签查看 A 股特色数据
           </div>
         ) : loading && !activeData ? (
-          <div className="flex items-center justify-center h-full gap-2 text-[#787B86] text-xs">
+          <div className="flex items-center justify-center h-full gap-2 text-text-secondary text-xs">
             <Loader2 size={14} className="animate-spin" />
             正在加载…
           </div>
         ) : error && !activeData ? (
           <div className="flex flex-col items-center justify-center h-full gap-2">
-            <span className="text-xs text-[#F23645]">✕ {error}</span>
+            <span className="text-xs text-down">✕ {error}</span>
             <button
               onClick={() => fetchFeature(activeTab)}
-              className="text-xs text-[#2962FF] hover:underline"
+              className="text-xs text-accent hover:underline"
             >
               重试
             </button>
@@ -197,15 +209,46 @@ function FeatureRenderer({ feature, data }: { feature: AstockFeatureKey; data: A
   if (feature === "insider_transactions") {
     return <InsiderTransactionsPanel data={data.data as unknown as InsiderTransactionsData} rawMd={data.raw_md} />;
   }
-  // All other features: raw_md fallback
+  // Phase 9: new panels
+  if (feature === "block_trade_detail" || feature === "block_trade_industry" || feature === "block_trade_market_stat") {
+    return <BlockTradePanel data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "dividend_bonus") {
+    return <DividendBonusPanel data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "earnings_forecast" || feature === "earnings_express") {
+    return <EarningsForecastPanel data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "analyst_rating") {
+    return <AnalystRatingPanel data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "institutional_hold") {
+    return <InstitutionalHoldPanel data={data.data} rawMd={data.raw_md} />;
+  }
+  // Phase 12.02: 持仓股东（一个组件三种形态）
+  if (feature === "holder_num") {
+    return <HolderPanel mode="num" data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "free_holders") {
+    return <HolderPanel mode="free" data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "holder_increase") {
+    return <HolderPanel mode="increase" data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "stock_notices") {
+    return <StockNoticesPanel data={data.data} rawMd={data.raw_md} />;
+  }
+  if (feature === "research_reports") {
+    return <ResearchReportsPanel data={data.data} rawMd={data.raw_md} />;
+  }
+  // 全市场数据（新股/融资融券/日历/活跃度）不在个股标签栏显示，通过「市场」页面访问
+  // All other features: use MarkdownRenderer for raw_md fallback
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto p-3">
       {data.raw_md ? (
-        <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-          {data.raw_md}
-        </pre>
+        <MarkdownRenderer markdown={data.raw_md} />
       ) : (
-        <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
+        <div className="flex items-center justify-center h-full text-text-secondary text-xs">
           暂无数据
         </div>
       )}

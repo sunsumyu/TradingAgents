@@ -6,6 +6,7 @@ import type {
   BacktestRequest,
   BacktestResponse,
   ChartExportRequest,
+  Goal,
   ModelInfo,
   NavPoint,
   PortfolioResponse,
@@ -17,7 +18,7 @@ import type {
   TradeRecord,
 } from "./types";
 
-const BASE_URL = "http://127.0.0.1:8420";
+const BASE_URL = (import.meta.env.VITE_BACKEND_URL as string) || "http://127.0.0.1:8425";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -360,6 +361,22 @@ export const api = {
     return handle<PortfolioResponse>(resp);
   },
 
+  /** GET /api/portfolio/goals — investment goals with progress */
+  async getPortfolioGoals(): Promise<Goal[]> {
+    const resp = await fetch(`${BASE_URL}/api/portfolio/goals`);
+    return handle<Goal[]>(resp);
+  },
+
+  /** POST /api/portfolio/goals — set/replace goals */
+  async setPortfolioGoals(goals: Goal[]): Promise<Goal[]> {
+    const resp = await fetch(`${BASE_URL}/api/portfolio/goals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(goals),
+    });
+    return handle<Goal[]>(resp);
+  },
+
   /** POST /api/screener — natural-language stock screener (Phase 6) */
   async runScreener(
     query: string,
@@ -428,5 +445,57 @@ export const api = {
       throw new Error(detail);
     }
     return resp.blob();
+  },
+
+  /** GET /api/hot-stocks - market-wide hot stocks panel with 4 sections */
+  async getHotStocksPanel(dateStr?: string, signal?: AbortSignal): Promise<import("./types").HotStocksPanelResponse> {
+    const url = new URL(`${BASE_URL}/api/hot-stocks`);
+    if (dateStr) url.searchParams.set("date", dateStr);
+    const resp = await fetch(url.toString(), { signal });
+    if (!resp.ok) {
+      let detail = `热门股票面板请求失败: HTTP ${resp.status}`;
+      try {
+        const body = await resp.json();
+        detail = body.detail ?? detail;
+      } catch {
+        /* not JSON */
+      }
+      throw new Error(detail);
+    }
+    return resp.json();
+  },
+
+  /** Phase 8: Market Overview — full market dashboard data. */
+  async getMarketOverview(signal?: AbortSignal): Promise<import("./types").MarketOverviewData> {
+    const resp = await fetch(`${BASE_URL}/api/market-overview`, { signal });
+    if (!resp.ok) throw new Error(`Market overview failed: ${resp.status}`);
+    return resp.json();
+  },
+
+  /** Phase 8: Stock intraday trends for MiniChart. */
+  async getStockTrends(code: string): Promise<import("./types").IndexTrend[]> {
+    // Reuse index trends endpoint with stock secid
+    const prefix = code.startsWith("6") ? "1" : "0";
+    const resp = await fetch(
+      `${BASE_URL.replace("/api", "")}/push2/trends?secid=${prefix}.${code}`,
+    );
+    if (!resp.ok) return [];
+    const d = await resp.json();
+    return (d?.trends ?? []).map((t: string) => {
+      const parts = t.split(",");
+      return {
+        time: parts[0]?.split(" ")?.[1] ?? parts[0],
+        price: parseFloat(parts[1]) || 0,
+        avg_price: parseFloat(parts[2]) || 0,
+        volume: parseInt(parts[3]) || 0,
+      };
+    });
+  },
+
+  /** GET /api/stock-info/:ticker - structured stock info panel */
+  async getStockInfo(ticker: string): Promise<any> {
+    const resp = await fetch(`${BASE_URL}/api/stock-info/${ticker}`);
+    if (!resp.ok) throw new Error(`Stock info failed: ${resp.statusText}`);
+    return resp.json();
   },
 };

@@ -540,10 +540,21 @@ def run_screener(
 
     engine = ScreenerEngine()
 
-    # Step 1: Parse NL → structured filters
-    criteria = _parse_query_with_llm(query, config)
+    # Detect if the query itself is a stock code and route to ticker_hint path
+    resolved_ticker = ticker_hint
+    if not resolved_ticker and query:
+        stripped = query.strip()
+        if is_astock_code(stripped):
+            resolved_ticker = stripped
 
-    if not criteria.filters:
+    # Step 1: Parse NL → structured filters (skip for bare stock code queries)
+    if resolved_ticker and not ticker_hint:
+        # Query is a bare stock code: skip NL parsing, use minimal criteria
+        criteria = _parse_query_with_llm("", config)
+    else:
+        criteria = _parse_query_with_llm(query, config)
+
+    if not criteria.filters and not resolved_ticker:
         return ScreenerResponse(
             query=query,
             parsed_criteria=criteria,
@@ -553,8 +564,8 @@ def run_screener(
         )
 
     # Step 2: Get candidate stocks
-    if ticker_hint and is_astock_code(ticker_hint):
-        candidates = [{"ticker": ticker_hint, "name": ""}]
+    if resolved_ticker and is_astock_code(resolved_ticker):
+        candidates = [{"ticker": resolved_ticker, "name": ""}]
     else:
         candidates = _get_candidate_stocks(criteria.filters, config)
 

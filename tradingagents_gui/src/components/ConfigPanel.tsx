@@ -26,6 +26,7 @@ interface Props {
   onMarketData: () => void;
   onScreener: () => void;
   onPortfolio: () => void;
+  onHotStocks: () => void;
 }
 
 // ── localStorage helpers ──────────────────────────────────────────────────────
@@ -365,16 +366,16 @@ export default function ConfigPanel({
         {!backendOnline && backendStatus === "connecting" && (
           <div className="mb-4 rounded-lg border border-blue-400/30 bg-blue-400/10 px-4 py-3 text-[12px] text-blue-300 leading-relaxed flex items-center gap-2">
             <span className="inline-block w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin shrink-0" />
-            正在连接后端服务（127.0.0.1:8420）…如果后端刚启动，请稍候。
+            正在连接后端服务（127.0.0.1:8425）…如果后端刚启动，请稍候。
           </div>
         )}
 
         {!backendOnline && backendStatus === "failed" && (
           <div className="mb-4 rounded-lg border border-warn/30 bg-warn/15 px-4 py-3 text-[12px] text-warn leading-relaxed">
-            ⚠️ 后端服务未响应（127.0.0.1:8420）。请先运行{" "}
+            ⚠️ 后端服务未响应（127.0.0.1:8425）。请先运行{" "}
             <code className="font-mono">python start_gui.py</code>{" "}
             启动后端，或在项目目录执行{" "}
-            <code className="font-mono">python -m granian --interface asgi --host 127.0.0.1 --port 8420 tradingagents_api.server:app</code>
+            <code className="font-mono">python -m granian --interface asgi --host 127.0.0.1 --port 8425 tradingagents_api.server:app</code>
             ，然后点击「测试连接」确认。当前「开始分析」已禁用。
           </div>
         )}

@@ -7,6 +7,7 @@
  */
 
 import type { InsiderTransactionsData } from "../../lib/types";
+import MarkdownRenderer from "../shared/Markdown";
 
 interface Props {
   data: InsiderTransactionsData;
@@ -14,12 +15,12 @@ interface Props {
 }
 
 export default function InsiderTransactionsPanel({ data, rawMd }: Props) {
-  const { sections, raw_text } = data;
+  const { sections = [], raw_text = "" } = data ?? ({} as InsiderTransactionsData);
 
   // ── Empty state ───────────────────────────────────────────────────────────
   if (!sections.length && !raw_text) {
     return (
-      <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
+      <div className="flex items-center justify-center h-full text-text-secondary text-xs">
         暂无股东动向数据
       </div>
     );
@@ -28,27 +29,23 @@ export default function InsiderTransactionsPanel({ data, rawMd }: Props) {
   // ── Structured sections ───────────────────────────────────────────────────
   if (sections.length > 0) {
     return (
-      <div className="h-full overflow-y-auto p-3 space-y-2">
+      <div className="h-full overflow-y-auto p-4 space-y-3">
         {/* Timeline dot + line */}
-        <div className="relative pl-4">
+        <div className="relative pl-5">
           {/* Vertical line */}
-          <div className="absolute left-1.5 top-1 bottom-1 w-px bg-[#2B2B43]" />
+          <div className="absolute left-2 top-2 bottom-2 w-px bg-gradient-to-b from-accent via-accent/50 to-transparent" />
 
           {sections.map((section, i) => (
-            <div key={i} className="relative mb-3 last:mb-0">
+            <div key={i} className="relative mb-4 last:mb-0">
               {/* Timeline dot */}
-              <div
-                className="absolute -left-4 top-1.5 w-2.5 h-2.5 rounded-full border-2 border-[#2962FF] bg-[#131722]"
-              />
+              <div className="absolute -left-5 top-2 w-3 h-3 rounded-full border-2 border-accent bg-bg-secondary shadow-glow-accent-sm" />
 
               {/* Card */}
-              <div className="bg-[#1E222D] rounded border border-[#363A45] p-2.5 ml-2">
-                <div className="text-[11px] font-medium text-[#2962FF] mb-1.5">
+              <div className="bg-bg-secondary rounded-lg border border-line p-3 ml-3 hover:border-accent/30 transition-colors">
+                <div className="text-[12px] font-semibold text-accent-light mb-2">
                   {section.title}
                 </div>
-                <pre className="text-[10px] text-[#787B86] whitespace-pre-wrap leading-relaxed font-mono">
-                  {section.content}
-                </pre>
+                <MarkdownRenderer markdown={section.content} />
               </div>
             </div>
           ))}
@@ -59,10 +56,8 @@ export default function InsiderTransactionsPanel({ data, rawMd }: Props) {
 
   // ── Fallback: raw markdown ────────────────────────────────────────────────
   return (
-    <div className="h-full overflow-y-auto">
-      <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-        {raw_text || rawMd}
-      </pre>
+    <div className="h-full overflow-y-auto p-4">
+      <MarkdownRenderer markdown={rawMd || raw_text || ""} className="p-3" />
     </div>
   );
 }

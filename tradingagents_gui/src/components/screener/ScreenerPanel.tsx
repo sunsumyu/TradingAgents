@@ -54,9 +54,10 @@ function ScoreBar({ score }: { score: number }) {
 interface Props {
   onBack: () => void;
   onAnalyzeTicker: (ticker: string) => void;
+  config?: import("../../lib/types").AnalysisConfig;
 }
 
-export default function ScreenerPanel({ onBack, onAnalyzeTicker }: Props) {
+export default function ScreenerPanel({ onBack, onAnalyzeTicker, config }: Props) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -88,7 +89,7 @@ export default function ScreenerPanel({ onBack, onAnalyzeTicker }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [query, config]);
 
   const toggleSort = useCallback((key: SortKey) => {
     setSortKey((prev) => {

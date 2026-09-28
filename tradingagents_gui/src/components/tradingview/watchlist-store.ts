@@ -188,7 +188,7 @@ function loadLegacyWatchlist(): WatchlistItem[] {
 
 // ── Server sync ──────────────────────────────────────────────────────────────
 
-const BASE_URL = "http://127.0.0.1:8420";
+const BASE_URL = (import.meta.env.VITE_BACKEND_URL as string) || "http://127.0.0.1:8425";
 
 /**
  * Load watchlist state from the server, merging with local state.

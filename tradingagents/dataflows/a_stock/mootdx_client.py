@@ -281,3 +281,83 @@ def get_insider_transactions(
 
     except Exception as e:
         return f"Error retrieving insider/shareholder data for {code}: {str(e)}"
+
+
+def get_insider_change_chart(
+    ticker: str = "",
+    market: str = "all",
+    curr_date: str = "",
+) -> str:
+    """重要股东持股变动（月度增减持柱状图 + 明细表）。
+
+    Data source: akshare stock_share_hold_change_sse/szse/bse
+
+    Returns markdown::
+
+        # 增减持 | 全部股票 | 2026-09
+        月份 | 增持金额(万) | 减持金额(万)
+    """
+    from datetime import datetime, timedelta
+
+    lines = ["# 增减持"]
+
+    if curr_date:
+        ref_date = datetime.strptime(curr_date, "%Y-%m-%d")
+    else:
+        ref_date = datetime.now()
+
+    lines.append(f"\n数据日期: {ref_date.strftime('%Y-%m-%d')}")
+
+    # 获取近12个月的增减持数据
+    all_changes = []
+    market_funcs = {
+        "sh": "stock_share_hold_change_sse",
+        "sz": "stock_share_hold_change_szse",
+        "bj": "stock_share_hold_change_bse",
+    }
+
+    for mkt, fn_name in market_funcs.items():
+        if market != "all" and market != mkt:
+            continue
+        try:
+            from . import _safe_akshare_call
+            df = _safe_akshare_call(fn_name)
+            if df is not None and not df.empty:
+                all_changes.append(df)
+        except Exception:
+            try:
+                import akshare as ak
+                fn = getattr(ak, fn_name)
+                df = fn()
+                if df is not None and not df.empty:
+                    all_changes.append(df)
+            except Exception:
+                pass
+
+    if not all_changes:
+        lines.append("\n暂无增减持数据。")
+        return "\n".join(lines)
+
+    import pandas as pd
+    df_all = pd.concat(all_changes, ignore_index=True)
+
+    lines.append(f"\n共 {len(df_all)} 条记录")
+    lines.append("公告日期 | 证券代码 | 证券简称 | 变动人 | 变动方向 | 变动股数 | 成交均价 | 变动后持股 | 变动原因")
+
+    for _, row in df_all.head(50).iterrows():
+        date = str(row.get("公告日期", row.get("变动日期", "")))[:10]
+        code = str(row.get("证券代码", ""))
+        name = str(row.get("证券简称", ""))
+        person = str(row.get("变动人", ""))
+        direction = str(row.get("变动方向", ""))
+        shares = row.get("变动股数", 0) or 0
+        price = row.get("成交均价", 0) or 0
+        after = row.get("变动后持股", 0) or 0
+        reason = str(row.get("变动原因", ""))
+
+        lines.append(
+            f"  {date} | {code} | {name} | {person} | {direction} | "
+            f"{float(shares):.2f} | {float(price):.2f} | {float(after):.2f} | {reason}"
+        )
+
+    return "\n".join(lines)

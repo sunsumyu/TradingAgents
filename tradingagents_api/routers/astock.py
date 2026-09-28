@@ -36,3 +36,17 @@ async def post_astock_feature(request: AstockFeatureRequest):
         raise HTTPException(status_code=400, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/api/stock-info/{ticker}")
+async def get_stock_info(ticker: str):
+    """Get structured stock info panel data (financial, shareholder, fund, dividend)."""
+    if not is_astock_code(ticker):
+        raise HTTPException(status_code=400, detail=f"'{ticker}' is not a valid A-share code")
+    
+    try:
+        from tradingagents.dataflows.a_stock import get_stock_info_panel
+        data = get_stock_info_panel(code=ticker)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

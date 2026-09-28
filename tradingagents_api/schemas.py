@@ -267,6 +267,36 @@ class RealtimePriceItem(BaseModel):
     change: float = Field(default=0.0, description="Absolute change vs previous close")
     changePct: float = Field(default=0.0, description="Percent change vs previous close")
     name: str | None = Field(default=None, description="Instrument display name, if known")
+    # 五档盘口 (order book)
+    bid1_price: float | None = None
+    bid1_vol: int | None = None
+    bid2_price: float | None = None
+    bid2_vol: int | None = None
+    bid3_price: float | None = None
+    bid3_vol: int | None = None
+    bid4_price: float | None = None
+    bid4_vol: int | None = None
+    bid5_price: float | None = None
+    bid5_vol: int | None = None
+    ask1_price: float | None = None
+    ask1_vol: int | None = None
+    ask2_price: float | None = None
+    ask2_vol: int | None = None
+    ask3_price: float | None = None
+    ask3_vol: int | None = None
+    ask4_price: float | None = None
+    ask4_vol: int | None = None
+    ask5_price: float | None = None
+    ask5_vol: int | None = None
+    # 关键指标
+    volume: int | None = None
+    outer_disc: int | None = None
+    inner_disc: int | None = None
+    turnover_pct: float | None = None
+    pe_ttm: float | None = None
+    pb: float | None = None
+    mcap_yi: float | None = None
+    float_mcap_yi: float | None = None
 
 
 class ChartDataRequest(BaseModel):
@@ -310,6 +340,19 @@ class ScreenerRequest(BaseModel):
     max_results: int = 20
     ticker_hint: str | None = None
     template_id: str | None = None  # Run a preset template instead of NL query
+    # LLM configuration (same as AnalyzeRequest for consistency)
+    quick_model: ModelConfig | None = Field(
+        default=None,
+        description="Quick-thinking model config (provider, model, api_key, backend_url)",
+    )
+    deep_model: ModelConfig | None = Field(
+        default=None,
+        description="Deep-thinking model config (provider, model, api_key, backend_url)",
+    )
+    # Legacy single-provider config (backward compatible)
+    llm_provider: str = Field(default="google", description="LLM provider name")
+    api_key: str | None = Field(default=None, description="Optional API key override")
+    backend_url: str | None = Field(default=None, description="Custom LLM API base URL")
 
 
 class PortfolioTradeRequest(BaseModel):

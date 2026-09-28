@@ -10,6 +10,7 @@ import ReactECharts from "echarts-for-react";
 import { api } from "../../lib/api";
 import type { PortfolioResponse, TradeRecord, NavPoint } from "../../lib/types";
 import { Card } from "../ui";
+import GoalsPanel from "./GoalsPanel";
 
 // ── Trade Dialog ────────────────────────────────────────────────────────────
 
@@ -135,7 +136,7 @@ function TradeDialog({ ticker, name, onTrade, onClose }: TradeDialogProps) {
 // ── NAV Chart ───────────────────────────────────────────────────────────────
 
 function NavChart({ data }: { data: NavPoint[] }) {
-  if (data.length < 2) return null;
+  if (data.length < 1) return null;
 
   const option = {
     grid: { top: 8, right: 8, bottom: 24, left: 48 },
@@ -295,11 +296,14 @@ export default function PortfolioPanel({ onBack }: Props) {
         )}
 
         {/* NAV chart */}
-        {navHistory.length >= 2 && (
+        {navHistory.length >= 1 && (
           <Card title="收益曲线">
             <NavChart data={navHistory} />
           </Card>
         )}
+
+        {/* Goals progress */}
+        <GoalsPanel onRefresh={refresh} />
 
         {/* Positions / History tabs */}
         <div className="flex items-center gap-2 border-b border-line pb-1">

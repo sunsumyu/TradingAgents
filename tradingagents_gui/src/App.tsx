@@ -12,6 +12,8 @@ const ReportPanel = lazy(() => import("./components/ReportPanel"));
 const MarketDataPanel = lazy(() => import("./components/MarketDataPanel"));
 const ScreenerPanel = lazy(() => import("./components/screener/ScreenerPanel"));
 const PortfolioPanel = lazy(() => import("./components/portfolio/PortfolioPanel"));
+const HotStocksEnhancedPanel = lazy(() => import("./components/astock/HotStocksEnhancedPanel"));
+const MarketOverviewPage = lazy(() => import("./components/market/MarketOverviewPage"));
 
 // ── Error Boundary ──────────────────────────────────────────────
 class ErrorBoundary extends Component<{ children: ReactNode; onReset?: () => void }, { error: string | null }> {
@@ -103,6 +105,7 @@ export default function App() {
           onMarketData={handleLoadMarketData}
           onScreener={() => navigateTo("screener")}
           onPortfolio={() => navigateTo("portfolio")}
+          onHotStocks={() => navigateTo("hot_stocks")}
         />
       )}
 
@@ -112,6 +115,7 @@ export default function App() {
           <ScreenerPanel
             onBack={() => navigateTo("config")}
             onAnalyzeTicker={handleScreenerAnalyze}
+            config={config}
           />
         </Suspense>
         </ErrorBoundary>
@@ -123,6 +127,24 @@ export default function App() {
           <PortfolioPanel
             onBack={() => navigateTo("config")}
           />
+        </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {phase === "hot_stocks" && (
+        <ErrorBoundary onReset={() => navigateTo("config")}>
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#787B86]">加载中...</div>}>
+          <HotStocksEnhancedPanel
+            onAnalyzeTicker={handleScreenerAnalyze}
+          />
+        </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {phase === "market_overview" && (
+        <ErrorBoundary onReset={() => navigateTo("config")}>
+        <Suspense fallback={<div className="flex-1 flex items-center justify-center text-[#787B86]">加载中...</div>}>
+          <MarketOverviewPage />
         </Suspense>
         </ErrorBoundary>
       )}

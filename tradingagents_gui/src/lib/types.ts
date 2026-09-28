@@ -222,6 +222,36 @@ export interface RealtimePrice {
   change: number;
   changePct: number;
   name?: string | null;
+  // 五档盘口 (order book)
+  bid1_price?: number;
+  bid1_vol?: number;
+  bid2_price?: number;
+  bid2_vol?: number;
+  bid3_price?: number;
+  bid3_vol?: number;
+  bid4_price?: number;
+  bid4_vol?: number;
+  bid5_price?: number;
+  bid5_vol?: number;
+  ask1_price?: number;
+  ask1_vol?: number;
+  ask2_price?: number;
+  ask2_vol?: number;
+  ask3_price?: number;
+  ask3_vol?: number;
+  ask4_price?: number;
+  ask4_vol?: number;
+  ask5_price?: number;
+  ask5_vol?: number;
+  // 关键指标
+  volume?: number;
+  outer_disc?: number;
+  inner_disc?: number;
+  turnover_pct?: number;
+  pe_ttm?: number;
+  pb?: number;
+  mcap_yi?: number;
+  float_mcap_yi?: number;
 }
 
 export interface StreamingToken {
@@ -326,9 +356,9 @@ export const DEFAULT_CONFIG: AnalysisConfig = {
   quick_model: { platform_id: "", model: "" },
   deep_model: { platform_id: "", model: "" },
   // Legacy single-provider config
-  llm_provider: "anthropic",
-  deep_think_llm: "claude-sonnet-4-20250514",
-  quick_think_llm: "claude-sonnet-4-20250514",
+  llm_provider: "google",
+  deep_think_llm: "gemini-3.1-pro-preview",
+  quick_think_llm: "gemini-3.5-flash",
   api_key: "",
   llm_proxy_url: "",
 };
@@ -525,21 +555,6 @@ export interface LockupExpiryData {
   has_future: boolean;
 }
 
-export interface HotStockItem {
-  ticker: string;
-  name: string;
-  change_pct?: number | null;
-  turnover_rate?: number | null;
-  volume_wan?: number | null;
-  net_flow_wan?: number | null;
-  topics: string;
-}
-
-export interface HotStocksData {
-  items: HotStockItem[];
-  total: number;
-}
-
 /** Structured financial statement data (balance_sheet / income_statement / cashflow). */
 export interface FinancialStatementData {
   periods: string[];                        // ["2026-06-30", "2026-03-31", ...]
@@ -585,7 +600,56 @@ export type AstockFeatureKey =
   | "insider_transactions"
   | "balance_sheet"
   | "cashflow"
-  | "income_statement";
+  | "income_statement"
+  | "ipo_declaration"
+  | "ipo_listing"
+  | "margin_detail"
+  | "margin_market_stat"
+  | "margin_industry"
+  | "investment_calendar"
+  | "seat_activity"
+  | "stock_activity"
+  // Phase 9
+  | "insider_change_chart"
+  | "block_trade_detail"
+  | "block_trade_industry"
+  | "block_trade_market_stat"
+  | "dividend_bonus"
+  | "earnings_forecast"
+  | "earnings_express"
+  | "analyst_rating"
+  | "consensus_estimate"
+  | "institutional_hold"
+  // Phase 12.02: 持仓股东（东财 datacenter/F10，个股级）
+  | "holder_num"
+  | "free_holders"
+  | "holder_increase"
+  // Phase 12.04: 公司公告（东财 np-anotice，个股级）
+  | "stock_notices"
+  // Phase 12.05: 研报流（东财 reportapi，个股级）
+  | "research_reports"
+  // TongDaXin reference data
+  | "survey_interaction"
+  | "company_name_changes"
+  | "st_changes"
+  | "neeq_abnormal_trade"
+  | "hk_ipo"
+  | "us_ipo"
+  | "futures_position"
+  | "market_statistics"
+  // Phase 10: TongDaXin 数据菜单新模块
+  | "fund_purchase"
+  | "fund_announcement"
+  | "fund_scale"
+  | "fund_open_info"
+  | "industry_chain_categories"
+  | "industry_chain_chains"
+  | "industry_list"
+  | "industry_detail"
+  | "industry_commodity"
+  | "macro_gdp"
+  | "macro_cpi"
+  | "macro_pmi";
 
 export interface AstockFeatureTab {
   key: AstockFeatureKey;
@@ -606,7 +670,156 @@ export const ASTOCK_FEATURE_TABS: AstockFeatureTab[] = [
   { key: "balance_sheet",      label: "资产负债表", needsAStock: true },
   { key: "cashflow",           label: "现金流量表", needsAStock: true },
   { key: "income_statement",   label: "利润表",    needsAStock: true },
+  // Phase 9: 结构化面板（工单 07 — 与后端 FEATURE_TABLE 对齐，key 集必须一致）
+  { key: "block_trade_detail", label: "大宗交易",  needsAStock: false },
+  { key: "dividend_bonus",     label: "分红送转",  needsAStock: false },
+  { key: "earnings_forecast",  label: "业绩预告",  needsAStock: false },
+  { key: "analyst_rating",     label: "机构评级",  needsAStock: false },
+  { key: "institutional_hold", label: "机构持股",  needsAStock: false },
+  // Phase 12.02: 持仓股东（东财 datacenter/F10，个股级）
+  { key: "holder_num",         label: "股东户数",  needsAStock: true },
+  { key: "free_holders",       label: "十大流通",  needsAStock: true },
+  { key: "holder_increase",    label: "增减持",    needsAStock: true },
+  { key: "stock_notices",     label: "公告",      needsAStock: true },
+  { key: "research_reports",  label: "研报",      needsAStock: true },
 ];
+
+// ── Phase 7: IPO / Margin Trading / Investment Calendar types ──────────────
+
+export interface IpoDeclarationItem {
+  code: string;
+  name: string;
+  subscribe_date: string;
+  subscribe_code: string;
+  price: number | null;
+  volume_wan: number | null;
+  online_volume_wan: number | null;
+  subscribe_limit_wan: number | null;
+  pe_ratio: number | null;
+  lottery_date: string;
+}
+
+export interface IpoDeclarationData {
+  items: IpoDeclarationItem[];
+  total: number;
+}
+
+export interface IpoListingItem {
+  code: string;
+  name: string;
+  listing_date: string;
+  price: number | null;
+  volume_wan: number | null;
+  online_volume_wan: number | null;
+  pe_ratio: number | null;
+  subscribe_date: string;
+  win_rate: number | null;
+}
+
+export interface IpoListingData {
+  items: IpoListingItem[];
+  total: number;
+}
+
+export interface MarginDetailItem {
+  code: string;
+  name: string;
+  market: string;
+  margin_balance: number;
+  margin_buy: number;
+  margin_repay: number;
+  net_buy: number;
+  short_qty: number;
+  short_sell: number;
+  short_repay: number;
+  net_short: number;
+  market_cap_ratio: number | null;
+}
+
+export interface MarginDetailData {
+  items: MarginDetailItem[];
+  market: string;
+  date: string;
+  total: number;
+}
+
+export interface MarginStatDay {
+  date: string;
+  margin_balance: number;
+  margin_buy: number;
+  short_qty: number;
+  short_balance: number;
+  total_balance: number;
+}
+
+export interface MarginMarketStatData {
+  items: MarginStatDay[];
+  market: string;
+}
+
+export interface MarginIndustryItem {
+  industry: string;
+  margin_ratio_pct: number;
+  short_ratio_pct: number;
+}
+
+export interface MarginIndustryData {
+  items: MarginIndustryItem[];
+  date: string;
+}
+
+export interface CalendarEventGroup {
+  code: string;
+  name: string;
+  description?: string;
+  suspend_date?: string;
+  resume_date?: string;
+  reason?: string;
+  date?: string;
+  quantity_wan?: number;
+  ratio_pct?: number;
+}
+
+export interface InvestmentCalendarData {
+  date: string;
+  ipo_listing: CalendarEventGroup[];
+  ipo_declaration: CalendarEventGroup[];
+  suspension_resumption: CalendarEventGroup[];
+  special_treatment: CalendarEventGroup[];
+  lockup_expiry: CalendarEventGroup[];
+}
+
+export interface SeatActivityItem {
+  name: string;
+  turnover_wan: number;
+  appear_count: number;
+  buy_count: number;
+  buy_amount_wan: number;
+  sell_count: number;
+  sell_amount_wan: number;
+  net_buy_wan: number;
+}
+
+export interface SeatActivityData {
+  period: string;
+  items: SeatActivityItem[];
+}
+
+export interface StockActivityItem {
+  code: string;
+  name: string;
+  last_appear_date: string;
+  turnover_wan: number;
+  appear_count: number;
+  buy_amount_wan: number;
+  sell_amount_wan: number;
+  net_buy_wan: number;
+}
+
+export interface StockActivityData {
+  period: string;
+  items: StockActivityItem[];
+}
 
 // ── Price alert types (ticket 5.08) ────────────────────────────────────────
 
@@ -664,6 +877,58 @@ export interface ScreenerResponse {
   suggestion: string;
 }
 
+// ── Hot Stocks Panel types ───────────────────────────────────────────────
+
+export interface HotStockItem {
+  ticker: string;
+  name: string;
+  change_pct?: number | null;
+  turnover_rate?: number | null;
+  volume_wan?: number | null;
+  net_flow_wan?: number | null;
+  topics?: string;
+}
+
+export interface HotStocksData {
+  items: HotStockItem[];
+  total: number;
+}
+
+export interface NorthboundFavoriteItem {
+  ticker: string;
+  name: string;
+  change_pct?: number | null;
+  northbound_net_wan?: number | null;
+  northbound_days?: number | null;
+  industry?: string;
+}
+
+export interface DragonTigerActiveItem {
+  ticker: string;
+  name: string;
+  change_pct?: number | null;
+  net_buy_wan?: number | null;
+  reason?: string;
+  appearances?: number;
+}
+
+export interface InstitutionalAttentionItem {
+  ticker: string;
+  name: string;
+  change_pct?: number | null;
+  analyst_count?: number | null;
+  pe_ttm?: number | null;
+  peg?: number | null;
+}
+
+export interface HotStocksPanelResponse {
+  date: string;
+  attention: HotStockItem[];
+  northbound: NorthboundFavoriteItem[];
+  dragon_tiger: DragonTigerActiveItem[];
+  institutional: InstitutionalAttentionItem[];
+}
+
 // ── Portfolio types (Phase 6, ticket 6.04) ──────────────────────────────────
 
 export interface PortfolioPosition {
@@ -700,4 +965,237 @@ export interface TradeRecord {
 export interface NavPoint {
   date: string;
   nav: number;
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  target_value: number;
+  current_value: number;
+  unit: string;
+  deadline: string;
+  created_at: string;
+}
+
+// ── Market Overview (Phase 8) ──────────────────────────────────────────────
+
+export interface IndexTrend {
+  time: string;
+  price: number;
+  avg_price: number;
+  volume: number;
+}
+
+export interface IndexData {
+  name: string;
+  price: number;
+  pre_close: number;
+  change_pct: number;
+  trends: IndexTrend[];
+}
+
+export interface StockRankingItem {
+  code: string;
+  name: string;
+  price: number;
+  change_pct: number;
+  change: number;
+  volume: number;
+  amount: number;
+}
+
+export interface BoardRankingItem {
+  code: string;
+  name: string;
+  change_pct: number;
+  price: number;
+  change: number;
+  volume_ratio: number;
+  up_count: number;
+  down_count: number;
+  limit_up_count: number;
+}
+
+export type BoardType = "industry" | "concept" | "style" | "region";
+
+export interface MarketBreadth {
+  total: number;
+  up_count: number;
+  down_count: number;
+  flat_count: number;
+  total_amount_yi: number;
+}
+
+export interface MarketNewsItem {
+  title: string;
+  content: string;
+  time: string;
+  source: string;
+}
+
+export interface MarketOverviewData {
+  timestamp: string;
+  indices: Record<string, IndexData>;
+  sh_gainers: StockRankingItem[];
+  sh_losers: StockRankingItem[];
+  sz_gainers: StockRankingItem[];
+  sz_losers: StockRankingItem[];
+  boards: Record<string, BoardRankingItem[]>;
+  breadth: MarketBreadth;
+  news: MarketNewsItem[];
+}
+
+// ── Phase 10: TongDaXin 数据菜单新模块 ──────────────────────────────────
+
+export interface FundPurchaseItem {
+  code: string;
+  name: string;
+  type: string;
+  nav: number | string | null;
+  nav_date: string;
+  subscribe_status: string;
+  redeem_status: string;
+  next_open: string;
+  min_buy: number;
+  daily_limit: number;
+  fee_rate: number;
+}
+
+export interface FundPurchaseData {
+  total: number;
+  all: FundPurchaseItem[];
+  issuing: FundPurchaseItem[];
+  upcoming: FundPurchaseItem[];
+  items: FundPurchaseItem[];
+  timestamp: string;
+}
+
+export interface IndustryChainCategory {
+  [key: string]: string[];
+}
+
+export interface ChainCard {
+  name: string;
+  change_pct: number;
+  has_data: boolean;
+}
+
+export interface IndustryChainData {
+  categories: {
+    categories: IndustryChainCategory;
+    count: number;
+    timestamp: string;
+  };
+  chains: {
+    hot: ChainCard[];
+    new: ChainCard[];
+    all: ChainCard[];
+    timestamp: string;
+  };
+  timestamp?: string;
+}
+
+export interface IndustryDataList {
+  categories: string[];
+  industries: any[];
+  total: number;
+  timestamp: string;
+}
+
+export interface CommodityData {
+  name: string;
+  unit: string;
+  price: number;
+  change: number;
+  change_pct: number;
+  history: { date: string; price: number; change: number; change_pct: number }[];
+}
+
+export interface IndustryDataOverview {
+  list: IndustryDataList;
+  commodity: {
+    commodities: CommodityData[];
+    timestamp: string;
+  };
+  default_detail?: any;
+}
+
+export interface MacroGdpData {
+  trend: { quarter: string; gdp: number; primary: number; secondary: number; tertiary: number }[];
+  growth: { quarter: string; gdp_growth: number }[];
+  structure: { quarter: string; primary_pct: number; secondary_pct: number; tertiary_pct: number }[];
+  timestamp: string;
+}
+
+export interface MacroAnalysisData {
+  gdp: MacroGdpData;
+  cpi: { monthly: any[]; yearly: any[]; timestamp: string };
+  pmi: { data: any[]; timestamp: string };
+  categories: { categories: string[]; available: string[]; timestamp: string };
+}
+
+// ── Unified feature payload contract (ticket 02) ────────────────────────────
+// Mirror of tradingagents_api/feature_payload.py. Every structured feature
+// returns this envelope so one generic table renders them all.
+// `kind: "raw"` is the EXPLICIT degradation path (carries markdown); it is
+// tech debt, never the silent default.
+
+export type FeatureUnit =
+  | "元"
+  | "万元"
+  | "亿元"
+  | "percent"
+  | "股"
+  | "万股"
+  | "亿股"
+  | "ratio"
+  | "count"
+  | "date"
+  | "text";
+
+export type FeatureFormat =
+  | "int"
+  | "float2"
+  | "float4"
+  | "date"
+  | "text"
+  | "signed";
+
+export interface FeatureColumn {
+  key: string;
+  label: string;
+  unit?: FeatureUnit;
+  format?: FeatureFormat;
+}
+
+export interface FeatureProvenance {
+  source?: string;
+  as_of?: string;
+  ttl_hint?: number | null;
+}
+
+export interface FeaturePayloadEnvelope {
+  kind: "table" | "raw";
+  columns: FeatureColumn[];
+  rows: Record<string, unknown>[];
+  provenance?: FeatureProvenance;
+  raw_md?: string;
+}
+
+/** Columns carry unit + format hints; the renderer must not infer them. */
+export function formatFeatureCell(
+  value: unknown,
+  column: FeatureColumn,
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (column.unit === "date" || column.format === "date") return String(value);
+
+  if (typeof value === "number") {
+    const digits = column.format === "float4" ? 4 : column.format === "float2" ? 2 : 0;
+    let text = value.toFixed(digits);
+    if (column.format === "signed" && value > 0) text = `+${text}`;
+    if (column.unit === "percent") text = `${text}%`;
+    return text;
+  }
+  return String(value);
 }

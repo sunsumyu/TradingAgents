@@ -28,6 +28,7 @@ import ReplayControls from "./ReplayControls";
 import IndicatorBar from "./IndicatorBar";
 import DrawingToolbar from "./DrawingToolbar";
 import WatchlistPanel from "./WatchlistPanel";
+import RightInfoPanel from "./RightInfoPanel";
 import SubPanels from "./SubPanels";
 import {
   computeSmaSeries,
@@ -445,10 +446,10 @@ export default function TradingViewLayout({
         </div>
       ) : isFullscreen ? (
         /* Fullscreen: main chart only — timeframe switching and drawing still work */
-        <div ref={chartAreaRef} className="flex-1 min-h-0 relative" data-chart-area>
+        <div ref={chartAreaRef} className="flex-1 min-h-[300px] relative" data-chart-area>
           <div className="flex flex-col h-full">
             <TimeframeSelector current={timeframe} onChange={handleTimeframeChange} />
-            <div className="flex-1 min-h-0 relative">
+            <div className="flex-1 min-h-[200px] relative">
               {isTimeline ? (
                 <IntradayTimeline
                   data={kline}
@@ -558,7 +559,7 @@ export default function TradingViewLayout({
           </div>
 
           {/* Main chart with loading overlay */}
-          <div ref={chartAreaRef} className="flex-1 min-h-0 relative" data-chart-area>
+          <div ref={chartAreaRef} className="flex-1 min-h-[200px] relative" data-chart-area>
             {isTimeline ? (
               <IntradayTimeline
                 data={kline}
@@ -610,9 +611,14 @@ export default function TradingViewLayout({
           />
         </div>
 
-        {/* Right: Watchlist */}
-        <div className="w-[220px] flex-shrink-0">
-          <WatchlistPanel currentTicker={ticker} onSelect={handleTickerChange} />
+        {/* Right: Quote Info + Watchlist */}
+        <div className="w-[220px] flex-shrink-0 flex flex-col">
+          <div className="flex-1 min-h-0 border-b border-[#1E222D]">
+            <RightInfoPanel quote={realtimeQuote} ticker={ticker} />
+          </div>
+          <div className="h-[300px] flex-shrink-0">
+            <WatchlistPanel currentTicker={ticker} onSelect={handleTickerChange} />
+          </div>
         </div>
       </div>
       )}

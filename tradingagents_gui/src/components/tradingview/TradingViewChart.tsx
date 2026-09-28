@@ -92,8 +92,8 @@ export default function TradingViewChart({
       animation: false,
       backgroundColor: "#131722",
       grid: [
-        { left: 60, right: 60, top: 10, bottom: "25%" },      // candle
-        { left: 60, right: 60, top: "78%", bottom: 10 },       // volume
+        { left: 60, right: 60, top: 10, bottom: "35%" },      // candle (top 65%)
+        { left: 60, right: 60, height: "15%", bottom: 40 },   // volume
       ],
       xAxis: [
         {
@@ -119,7 +119,7 @@ export default function TradingViewChart({
           data: dates,
           gridIndex: 1,
           axisLine: { lineStyle: { color: "#2B2B43" } },
-          axisLabel: { color: "#787B86", fontSize: 10 },
+          axisLabel: { show: false },  // 隐藏，避免与 grid[0] 的 xAxis 重叠
           axisTick: { show: false },
           splitLine: { show: false },
         },
@@ -321,6 +321,7 @@ export default function TradingViewChart({
         option={option}
         style={{ height: "100%", width: "100%" }}
         notMerge
+        autoResize
         onEvents={handleChartEvents}
       />
       <DrawingOverlay activeTool={activeTool} resetKey={data?.dates[0]} />

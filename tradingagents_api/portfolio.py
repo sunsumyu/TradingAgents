@@ -77,6 +77,18 @@ class PortfolioPerformance(BaseModel):
     losing_trades: int = 0
 
 
+class Goal(BaseModel):
+    """One investment goal / target."""
+
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
+    name: str = Field(description="目标名称")
+    target_value: float = Field(description="目标值")
+    current_value: float = Field(default=0, description="当前值")
+    unit: str = Field(default="", description="单位（元/%/股）")
+    deadline: str = Field(default="", description="截止日期 YYYY-MM-DD")
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
 class PortfolioSnapshot(BaseModel):
     """Full portfolio state."""
 
@@ -88,6 +100,7 @@ class PortfolioSnapshot(BaseModel):
         default_factory=list,
         description="[{date, nav}] — 净资产历史，用于收益曲线",
     )
+    goals: list[Goal] = Field(default_factory=list, description="投资目标列表")
 
 
 class PortfolioPositionResponse(BaseModel):
@@ -346,9 +359,24 @@ def get_trade_history() -> list[TradeRecord]:
 
 
 def get_nav_history() -> list[dict[str, Any]]:
-    """Get NAV history for the performance chart."""
+    """Get NAV history for the performance chart.
+
+    Always includes the initial cash as the first data point so the chart
+    renders even when no trades have been executed yet.
+    """
     p = _load_portfolio()
-    return p.nav_history
+    history = list(p.nav_history)
+
+    # Ensure the initial cash point exists as the first entry
+    if not history or history[0].get("nav") != p.initial_cash:
+        initial_point = {"date": "起始", "nav": round(p.initial_cash, 2)}
+        # If the first entry already has date "起始", replace it; otherwise prepend
+        if history and history[0].get("date") == "起始":
+            history[0] = initial_point
+        else:
+            history.insert(0, initial_point)
+
+    return history
 
 
 def reset_portfolio(initial_cash: float = 1_000_000.0) -> PortfolioResponse:
@@ -356,3 +384,35 @@ def reset_portfolio(initial_cash: float = 1_000_000.0) -> PortfolioResponse:
     p = PortfolioSnapshot(cash=initial_cash, initial_cash=initial_cash)
     _save_portfolio(p)
     return get_portfolio()
+
+
+# ── Goals ─────────────────────────────────────────────────────────────────────
+
+
+def get_goals() -> list[Goal]:
+    """Get all investment goals."""
+    p = _load_portfolio()
+    # Update current_value for each goal based on portfolio state
+    total_value = p.cash + sum(pos.avg_cost * pos.quantity for pos in p.positions)
+    total_pnl = total_value - p.initial_cash
+    total_pnl_pct = (total_pnl / p.initial_cash * 100) if p.initial_cash > 0 else 0
+
+    for goal in p.goals:
+        if goal.name == "总资产":
+            goal.current_value = round(total_value, 2)
+        elif goal.name == "总收益":
+            goal.current_value = round(total_pnl, 2)
+        elif goal.name == "收益率":
+            goal.current_value = round(total_pnl_pct, 2)
+        elif goal.name == "交易次数":
+            goal.current_value = len(p.trades)
+
+    return p.goals
+
+
+def set_goals(goals: list[dict[str, Any]]) -> list[Goal]:
+    """Replace all goals."""
+    p = _load_portfolio()
+    p.goals = [Goal(**g) for g in goals]
+    _save_portfolio(p)
+    return get_goals()

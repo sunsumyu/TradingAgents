@@ -18,6 +18,8 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { SignalBadge } from "./ui";
 import { HighlightedText } from "./SmartHighlight";
+import SignalDashboard from "./charts/SignalDashboard";
+import FundFlowChart from "./charts/FundFlowChart";
 import BacktestSection from "./BacktestSection";
 import TradingViewLayout from "./tradingview/TradingViewLayout";
 import { buildExportHtml } from "../lib/html-export";
@@ -590,6 +592,32 @@ export default function ReportPanel() {
                     bollinger={chartData.bollinger}
                     ticker={ticker}
                   />
+                </div>
+              )}
+              {/* Dashboard + fund flow: produced by the backend chart pipeline
+                  but not rendered by TradingViewLayout (ticket 10 revival). */}
+              {chartData?.dashboard && (
+                <div className="px-6 pt-4">
+                  <div className="bg-bg-surface rounded-lg border border-line overflow-hidden">
+                    <div className="px-4 py-2 border-b border-line text-[13px] font-medium text-text-primary">
+                      信号仪表盘
+                    </div>
+                    <div className="p-2">
+                      <SignalDashboard data={chartData.dashboard} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {chartData?.fundFlow && (
+                <div className="px-6 pt-4">
+                  <div className="bg-bg-surface rounded-lg border border-line overflow-hidden">
+                    <div className="px-4 py-2 border-b border-line text-[13px] font-medium text-text-primary">
+                      资金流向
+                    </div>
+                    <div className="p-2">
+                      <FundFlowChart data={chartData.fundFlow} />
+                    </div>
+                  </div>
                 </div>
               )}
               <div className="px-6 py-6">

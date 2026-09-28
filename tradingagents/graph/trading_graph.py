@@ -374,12 +374,19 @@ class TradingAgentsGraph:
         finally:
             # Restore unwrapped LLMs so the next run starts clean.
             if _llm_cache is not None:
-                stats = _llm_cache.stats()
-                logger.info(
-                    "LLM cache stats for %s: %s", company_name, stats
-                )
-                _llm_cache.prune_expired()
-                _llm_cache.close()
+                try:
+                    stats = _llm_cache.stats()
+                    logger.info(
+                        "LLM cache stats for %s: %s", company_name, stats
+                    )
+                    _llm_cache.prune_expired()
+                except Exception as exc:
+                    logger.warning("LLM cache cleanup failed: %s", exc)
+                finally:
+                    try:
+                        _llm_cache.close()
+                    except Exception:
+                        pass
                 self.quick_thinking_llm = self._base_quick_thinking_llm
                 self.deep_thinking_llm = self._base_deep_thinking_llm
                 # Rebuild graph setup with unwrapped LLMs (use cached variant).

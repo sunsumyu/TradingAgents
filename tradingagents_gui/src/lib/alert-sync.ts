@@ -14,7 +14,7 @@
 
 import type { PriceAlert } from "./types";
 
-const BASE_URL = "http://127.0.0.1:8420";
+const BASE_URL = "http://127.0.0.1:8425";
 const TOMBSTONES_KEY = "tradingagents_alert_tombstones";
 
 // ── Server-facing types ──────────────────────────────────────────────────────

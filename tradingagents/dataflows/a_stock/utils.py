@@ -268,3 +268,70 @@ def _merge_ohlcv(primary: pd.DataFrame, supplement: pd.DataFrame) -> pd.DataFram
     combined = combined.drop_duplicates(subset=["Date"], keep="last")
     combined = combined.sort_values("Date").reset_index(drop=True)
     return combined
+
+
+# ── Minute-bar timestamp reconstruction ──────────────────────────────────────
+# BaoStock's `date` field for minute k-lines is DATE-ONLY ("2026-09-10"), so
+# every bar of a day shares one timestamp and collapses to a single row in
+# TDengine. A-share sessions are fixed (09:30-11:30, 13:00-15:00 = 240 min),
+# and BaoStock returns bars in chronological order, so bar i of a full day maps
+# deterministically to the session grid labelled by bar END time (the same
+# convention Sina uses: 60min → 10:30/11:30/14:00/15:00).
+
+_SESSION_START_AM = 9 * 60 + 30   # 09:30
+_SESSION_START_PM = 13 * 60       # 13:00
+_SESSION_LEN = 120                # minutes per half-session
+
+
+def minute_session_labels(freq_min: int) -> list[str]:
+    """Intraday HH:MM labels (end-time convention) for one full trading day."""
+    n_half = _SESSION_LEN // freq_min
+    labels = []
+    for k in range(1, n_half + 1):
+        m = _SESSION_START_AM + k * freq_min
+        labels.append(f"{m // 60:02d}:{m % 60:02d}")
+    for k in range(1, n_half + 1):
+        m = _SESSION_START_PM + k * freq_min
+        labels.append(f"{m // 60:02d}:{m % 60:02d}")
+    return labels
+
+
+_FREQ_MINUTES = {"kline_1min": 1, "kline_5min": 5, "kline_15min": 15,
+                 "kline_30min": 30, "kline_60min": 60}
+
+
+def resolve_dateonly_bars(bars: list[dict], data_type: str) -> tuple[list[dict], int]:
+    """Assign HH:MM:SS to date-only minute bars using the session grid.
+
+    Bars whose `date` already carries a time are left untouched. Returns
+    (bars, n_resolved); a new list is returned only when something changed.
+    """
+    freq = _FREQ_MINUTES.get(data_type)
+    if not freq:
+        return bars, 0
+    by_day: dict[str, list[int]] = {}
+    touched = False
+    for i, b in enumerate(bars):
+        d = b.get("date", "")
+        if len(d) == 10:  # date-only
+            by_day.setdefault(d, []).append(i)
+            touched = True
+    if not touched:
+        return bars, 0
+
+    grid = minute_session_labels(freq)
+    out = list(bars)
+    resolved = 0
+    for day, idxs in by_day.items():
+        n = len(idxs)
+        if n == len(grid):
+            for pos, i in enumerate(idxs):
+                b = dict(out[i]); b["date"] = f"{day} {grid[pos]}:00"
+                out[i] = b; resolved += 1
+        else:
+            # rare partial day: spread bars proportionally across the grid
+            for pos, i in enumerate(idxs):
+                g = grid[round(pos * (len(grid) - 1) / max(n - 1, 1))]
+                b = dict(out[i]); b["date"] = f"{day} {g}:00"
+                out[i] = b; resolved += 1
+    return out, resolved

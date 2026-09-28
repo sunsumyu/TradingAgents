@@ -1,6 +1,8 @@
 """
 TradingAgents 桌面 GUI 一键启动脚本
 同时启动 Python 后端和 Rust GUI 前端
+
+配置从 tradingagents.config 加载（支持环境变量覆盖）。
 """
 
 import os
@@ -12,13 +14,16 @@ import time
 import threading
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from tradingagents.config import BACKEND_HOST, BACKEND_PORT, RESULTS_DIR
+
 ROOT = Path(__file__).resolve().parent
-BACKEND_PORT = 8420
-BACKEND_HOST = "127.0.0.1"
 
 # ── Python discovery ──────────────────────────────────────────────────────────
 # `python` may not be on PATH in the user's shell; probe common locations.
 _PY_CANDIDATES = [
+    r"G:\Hermes\hermes-agent\venv\Scripts\python.exe",  # project venv
     sys.executable,  # the interpreter running this script
     "python",
     "python3",
@@ -140,6 +145,90 @@ def build_gui() -> bool:
     return find_gui_binary() is not None
 
 
+def find_port_holders(port: int) -> list[int]:
+    """Return PIDs of processes LISTENING on *port* (via netstat).
+
+    Decodes output with errors='replace' — Chinese Windows emits GBK text
+    that crashes UTF-8 text-mode subprocess reads.
+    """
+    try:
+        out = subprocess.run(
+            ["netstat", "-ano"], capture_output=True, timeout=10
+        ).stdout.decode("utf-8", errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        return []
+    pids: list[int] = []
+    for line in out.splitlines():
+        if f":{port}" in line and "LISTENING" in line:
+            parts = line.split()
+            if parts:
+                try:
+                    pid = int(parts[-1])
+                    if pid > 0 and pid not in pids:
+                        pids.append(pid)
+                except ValueError:
+                    pass
+    return pids
+
+
+def _is_python_process(pid: int) -> bool:
+    """True if *pid* belongs to python.exe (safety check before killing)."""
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+            capture_output=True, timeout=10,
+        ).stdout.decode("utf-8", errors="replace").strip()
+        return bool(out) and "python" in out.lower()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _port_is_free(host: str, port: int) -> bool:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((host, port))
+        s.close()
+        return True
+    except OSError:
+        return False
+
+
+def kill_port_holders(host: str, port: int, timeout: float = 15.0) -> bool:
+    """Kill leftover python processes holding *port* (granian main + workers).
+
+    granian is multi-process: worker children inherit the listening socket,
+    so killing only the parent leaves orphaned workers on the port. We use
+    `taskkill /T` to take down the whole process tree.
+
+    Only python.exe processes are killed — anything else holding the port is
+    left alone and reported.
+    """
+    pids = find_port_holders(port)
+    if not pids:
+        return _port_is_free(host, port)
+
+    print(f"Port {host}:{port} is held by PID(s): {', '.join(map(str, pids))}")
+    for pid in pids:
+        if not _is_python_process(pid):
+            print(f"  PID {pid} is NOT python — leaving it alone.")
+            continue
+        print(f"  Killing leftover backend process tree (PID {pid})...")
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True, timeout=10,
+        )
+
+    # Wait for the kernel to actually release the socket
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _port_is_free(host, port):
+            print(f"Port {port} released.")
+            return True
+        time.sleep(0.5)
+
+    return _port_is_free(host, port)
+
+
 def wait_for_backend(host: str, port: int, timeout: float = 30.0) -> bool:
     """Wait until the FastAPI backend accepts TCP connections."""
     deadline = time.time() + timeout
@@ -155,6 +244,33 @@ def wait_for_backend(host: str, port: int, timeout: float = 30.0) -> bool:
     return False
 
 
+def wait_port_bindable(host: str, port: int, timeout: float = 210.0) -> bool:
+    """Poll until `host:port` can actually be bound.
+
+    On Windows, binding a port that was used moments ago (a previous session's
+    connections sitting in TIME_WAIT, or an outbound connection that grabbed it
+    as its ephemeral source port) fails with WSAEACCES (os error 10013) — even
+    though netstat shows nothing listening. The blockage clears on its own, so
+    wait for it before handing the port to granian.
+    """
+    deadline = time.time() + timeout
+    warned = False
+    while time.time() < deadline:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind((host, port))
+            sock.close()
+            return True
+        except OSError as exc:
+            if not warned:
+                print(f"Port {host}:{port} is temporarily unavailable ({exc}).")
+                print("A previous run's connections are likely still in TIME_WAIT.")
+                print(f"Waiting up to {timeout:.0f}s for it to clear ...")
+                warned = True
+            time.sleep(3)
+    return False
+
+
 def print_backend_output(proc: subprocess.Popen):
     """Print backend stdout/stderr in a background thread for debugging."""
     for line in iter(proc.stdout.readline, b""):
@@ -167,17 +283,20 @@ def print_backend_output(proc: subprocess.Popen):
 
 
 def start_backend(python_bin: str) -> subprocess.Popen:
-    """Start the Python backend using granian ASGI server."""
-    print(f"Starting Python backend with granian on {BACKEND_HOST}:{BACKEND_PORT} ...")
+    """Start the Python backend via _start_combined.py (combined vendor + SO_REUSEADDR)."""
+    print(f"Starting Python backend with granian on {BACKEND_HOST}:{BACKEND_PORT} (combined vendor) ...")
+    # 传递 combined vendor 环境变量
+    env = os.environ.copy()
+    env["TRADINGAGENTS_MARKET_DATA_VENDOR"] = "combined"
     proc = subprocess.Popen(
         [
-            python_bin, "-B", "-m", "granian",
-            "--interface", "asgi",
-            "--host", BACKEND_HOST,
-            "--port", str(BACKEND_PORT),
-            "tradingagents_api.server:app",
+            python_bin, "-B",
+            str(ROOT / "_start_backend.py"),
+            BACKEND_HOST,
+            str(BACKEND_PORT),
         ],
         cwd=str(ROOT),
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
@@ -189,14 +308,19 @@ def main():
 
     def cleanup(*_args):
         for p in procs:
+            if p.poll() is not None:
+                continue
+            # taskkill /T kills the whole process tree — granian workers
+            # inherit the listening socket and would otherwise survive as
+            # orphans still holding the backend port.
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(p.pid)],
+                capture_output=True, timeout=10,
+            )
             try:
-                p.terminate()
                 p.wait(timeout=5)
             except Exception:
-                try:
-                    p.kill()
-                except Exception:
-                    pass
+                pass
 
     signal.signal(signal.SIGINT, cleanup)
     signal.signal(signal.SIGTERM, cleanup)
@@ -210,6 +334,10 @@ def main():
         cleanup()
         sys.exit(1)
     print(f"Using Python: {python_bin}")
+    # Auto-clean leftover backend processes, then start immediately.
+    # _start_backend.py uses SO_REUSEADDR to bypass Windows TIME_WAIT,
+    # so we no longer need to passively wait for the port to clear.
+    kill_port_holders(BACKEND_HOST, BACKEND_PORT)
     backend = start_backend(python_bin)
     procs.append(backend)
 
@@ -229,6 +357,24 @@ def main():
         cleanup()
         sys.exit(1)
     print("Backend is ready!")
+
+    # ── 1.5. Start hourly kline collector (background) ────────────
+    collector_tickers = os.environ.get("HOURLY_COLLECT_TICKERS", "001232")
+    if collector_tickers.strip():
+        _coll_env = os.environ.copy()
+        _coll_env["TRADINGAGENTS_MARKET_DATA_VENDOR"] = "combined"
+        collector = subprocess.Popen(
+            [python_bin, "-m", "tradingagents.dataflows.a_stock.hourly_collector",
+             "--tickers", collector_tickers, "--daemon", "--interval", "1"],
+            cwd=str(ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=_coll_env,
+        )
+        procs.append(collector)
+        print(f"Hourly collector started for: {collector_tickers}")
+        t2 = threading.Thread(target=print_backend_output, args=(collector,), daemon=True)
+        t2.start()
 
     # ── 2. Rebuild frontend + binary if needed, then Start GUI ──────
     if not build_gui_assets():

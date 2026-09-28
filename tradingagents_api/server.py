@@ -24,7 +24,9 @@ from .routers import (
     chart_export,
     config,
     health,
+    hot_stocks,
     market,
+    market_overview,
     portfolio,
     providers,
     realtime,
@@ -64,6 +66,7 @@ for _router in (
     watchlist,
     analysis,
     market,
+    market_overview,
     astock,
     backtest,
     chart_export,
@@ -72,6 +75,7 @@ for _router in (
     realtime,
     config,
     cache,
+    hot_stocks,
 ):
     app.include_router(_router.router)
 

@@ -13,7 +13,7 @@ from typing import Annotated
 from datetime import datetime
 
 import requests as _requests
-from .utils import no_proxy_get
+from .http_client import sina_client
 
 logger = logging.getLogger(__name__)
 
@@ -96,12 +96,23 @@ def get_northbound_flow(
 
     try:
         url_rt = "https://data.hexin.cn/market/hsgtApi/method/dayChart/"
-        r = no_proxy_get(url_rt, headers=hsgt_headers, timeout=10)
+        r = sina_client.get(url_rt, headers=hsgt_headers, timeout=10)
         d = r.json()
 
-        times = d.get("time", [])
-        hgt = d.get("hgt", [])
-        sgt = d.get("sgt", [])
+        times = list(d.get("time", []))
+        hgt = list(d.get("hgt", []))
+        sgt = list(d.get("sgt", []))
+
+        # Upstream API may return arrays of unequal length; pad shorter
+        # arrays with their last known value so the tick-by-tick display
+        # does not show misleading "N/A" for indices that exist in `times`.
+        if times:
+            last_hgt = hgt[-1] if hgt else None
+            last_sgt = sgt[-1] if sgt else None
+            while len(hgt) < len(times):
+                hgt.append(last_hgt if last_hgt is not None else "N/A")
+            while len(sgt) < len(times):
+                sgt.append(last_sgt if last_sgt is not None else "N/A")
 
         if times:
             lines.append("## Realtime (cumulative net buying, 亿元)")

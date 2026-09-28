@@ -11,6 +11,7 @@
 import { useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import type { AstockFeatureKey, FinancialStatementData } from "../../lib/types";
+import MarkdownRenderer from "../shared/Markdown";
 
 interface Props {
   feature: AstockFeatureKey;
@@ -58,7 +59,7 @@ function fmtShortPeriod(p: string): string {
 }
 
 export default function FinancialStatementPanel({ feature, data, rawMd }: Props) {
-  const { periods, columns, items } = data;
+  const { periods = [], columns = [], items = {} } = data ?? ({} as FinancialStatementData);
   const highlights = HIGHLIGHTS[feature] ?? [];
 
   // Only show highlight items that actually exist in the data
@@ -125,9 +126,7 @@ export default function FinancialStatementPanel({ feature, data, rawMd }: Props)
     return (
       <div className="h-full overflow-y-auto">
         {rawMd ? (
-          <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-            {rawMd}
-          </pre>
+          <MarkdownRenderer markdown={rawMd} className="p-3" />
         ) : (
           <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
             暂无财务数据

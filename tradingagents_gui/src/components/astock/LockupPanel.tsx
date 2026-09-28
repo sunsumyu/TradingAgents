@@ -7,6 +7,9 @@
  */
 
 import type { LockupExpiryData } from "../../lib/types";
+import { formatDateDisplay } from "../../lib/dateFormat";
+import { useLanguage } from "../../lib/useLanguage";
+import MarkdownRenderer from "../shared/Markdown";
 
 interface Props {
   data: LockupExpiryData;
@@ -26,15 +29,14 @@ function fmtRatio(v: number | null | undefined): string {
 }
 
 export default function LockupPanel({ data, rawMd }: Props) {
-  const { batches, future_batches, has_future } = data;
+  const lang = useLanguage();
+  const { batches = [], future_batches = [], has_future = false } = data ?? ({} as LockupExpiryData);
 
   if (!batches.length && !future_batches.length) {
     return (
       <div className="h-full overflow-y-auto">
         {rawMd ? (
-          <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-            {rawMd}
-          </pre>
+          <MarkdownRenderer markdown={rawMd} className="p-3" />
         ) : (
           <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
             暂无解禁数据
@@ -65,7 +67,7 @@ export default function LockupPanel({ data, rawMd }: Props) {
               <tbody>
                 {future_batches.map((b) => (
                   <tr key={b.date} className="border-b border-[#FF9800]/10 last:border-0">
-                    <td className="px-2.5 py-1 text-[#D1D4DC]">{b.date}</td>
+                    <td className="px-2.5 py-1 text-[#D1D4DC]">{formatDateDisplay(b.date, lang)}</td>
                     <td className="px-2.5 py-1 text-[#787B86]">{b.shares_type || "—"}</td>
                     <td className="px-2.5 py-1 text-right tabular-nums text-[#D1D4DC]">
                       {fmtQty(b.quantity)}
@@ -106,7 +108,7 @@ export default function LockupPanel({ data, rawMd }: Props) {
               <tbody>
                 {batches.map((b) => (
                   <tr key={b.date} className="border-b border-[#363A45]/50 last:border-0">
-                    <td className="px-2.5 py-1 text-[#D1D4DC]">{b.date}</td>
+                    <td className="px-2.5 py-1 text-[#D1D4DC]">{formatDateDisplay(b.date, lang)}</td>
                     <td className="px-2.5 py-1 text-[#787B86]">{b.shares_type || "—"}</td>
                     <td className="px-2.5 py-1 text-right tabular-nums text-[#D1D4DC]">
                       {fmtQty(b.quantity)}

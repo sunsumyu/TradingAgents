@@ -13,9 +13,12 @@
 import { Fragment, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { DragonTigerAppearance, DragonTigerData, DragonTigerSeat } from "../../lib/types";
+import { formatDateDisplay } from "../../lib/dateFormat";
+import { useLanguage } from "../../lib/useLanguage";
+import MarkdownRenderer from "../shared/Markdown";
 
 interface Props {
-  data: DragonTigerData;
+  data?: DragonTigerData;
   rawMd: string;
 }
 
@@ -69,16 +72,15 @@ function SeatSection({ title, seats }: { title: string; seats: DragonTigerSeat[]
 
 export default function DragonTigerPanel({ data, rawMd }: Props) {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
-  const appearances = data.appearances ?? [];
+  const lang = useLanguage();
+  const appearances = data?.appearances ?? [];
 
   // Empty state
   if (appearances.length === 0) {
     return (
       <div className="h-full overflow-y-auto">
         {rawMd ? (
-          <pre className="text-[11px] text-[#787B86] p-3 whitespace-pre-wrap leading-relaxed">
-            {rawMd}
-          </pre>
+          <MarkdownRenderer markdown={rawMd} className="p-3" />
         ) : (
           <div className="flex items-center justify-center h-full text-[#787B86] text-xs">
             暂无龙虎榜数据
@@ -104,7 +106,7 @@ export default function DragonTigerPanel({ data, rawMd }: Props) {
   return (
     <div className="h-full overflow-y-auto text-[11px]">
       {/* Institutional activity summary */}
-      {data.inst_buy_wan != null && data.inst_sell_wan != null && (
+      {data?.inst_buy_wan != null && data?.inst_sell_wan != null && (
         <div className="px-3 py-1.5 border-b border-[#2B2B43] flex items-center gap-3 text-[#787B86]">
           <span>机构买入</span>
           <span className="text-[#F23645] font-mono">{data.inst_buy_wan.toFixed(0)}万</span>
@@ -142,7 +144,7 @@ export default function DragonTigerPanel({ data, rawMd }: Props) {
                   }`}
                   onClick={() => setExpandedRow(isOpen ? null : idx)}
                 >
-                  <td className="px-3 py-1.5 text-[#D1D4DC] whitespace-nowrap">{dateStr}</td>
+                  <td className="px-3 py-1.5 text-[#D1D4DC] whitespace-nowrap">{formatDateDisplay(dateStr, lang)}</td>
                   <td className="px-2 py-1.5 text-[#787B86] truncate max-w-[200px]">
                     {reasons.length > 1 ? `${reasons[0].reason} 等${reasons.length}条` : first.reason}
                   </td>
@@ -159,8 +161,8 @@ export default function DragonTigerPanel({ data, rawMd }: Props) {
                 {isOpen && isLatest && (
                   <tr>
                     <td colSpan={5} className="bg-[#131722] border-b border-[#2B2B43]">
-                      <SeatSection title="买入席位 TOP5" seats={data.buy_seats ?? []} />
-                      <SeatSection title="卖出席位 TOP5" seats={data.sell_seats ?? []} />
+                      <SeatSection title="买入席位 TOP5" seats={data?.buy_seats ?? []} />
+                      <SeatSection title="卖出席位 TOP5" seats={data?.sell_seats ?? []} />
                     </td>
                   </tr>
                 )}
